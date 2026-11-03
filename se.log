@@ -1,0 +1,80 @@
+◇ injected env (11) from .env
+[Erreur] Error: Un compte avec cet email existe déjà.
+    at UserDAL._mapSqlError (C:\Users\hp\Desktop\API-gestion-stock\dal\userDAL.js:28:29)
+    at UserDAL.requestAdminRegistration (C:\Users\hp\Desktop\API-gestion-stock\dal\userDAL.js:285:27)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async C:\Users\hp\Desktop\API-gestion-stock\controllers\authController.js:58:18 {
+  sqlNumber: 51000
+}
+[Erreur] RequestError: Cannot insert duplicate key row in object 'dbo.tblUser' with unique index 'UX_tblUser_PhoneNumber'. The duplicate key value is (611895388).
+    at handleError (C:\Users\hp\Desktop\API-gestion-stock\node_modules\mssql\lib\tedious\request.js:820:15)
+    at Connection.emit (node:events:508:28)
+    at Connection.emit (C:\Users\hp\Desktop\API-gestion-stock\node_modules\tedious\lib\connection.js:1022:18)
+    at RequestTokenHandler.onErrorMessage (C:\Users\hp\Desktop\API-gestion-stock\node_modules\tedious\lib\token\handler.js:285:21)
+    at Readable.<anonymous> (C:\Users\hp\Desktop\API-gestion-stock\node_modules\tedious\lib\token\token-stream-parser.js:19:33)
+    at Readable.emit (node:events:508:28)
+    at addChunk (node:internal/streams/readable:559:12)
+    at readableAddChunkPushObjectMode (node:internal/streams/readable:536:3)
+    at Readable.push (node:internal/streams/readable:391:5)
+    at nextAsync (node:internal/streams/from:194:22) {
+  code: 'EREQUEST',
+  originalError: Error: Cannot insert duplicate key row in object 'dbo.tblUser' with unique index 'UX_tblUser_PhoneNumber'. The duplicate key value is (611895388).
+      at handleError (C:\Users\hp\Desktop\API-gestion-stock\node_modules\mssql\lib\tedious\request.js:818:19)
+      at Connection.emit (node:events:508:28)
+      at Connection.emit (C:\Users\hp\Desktop\API-gestion-stock\node_modules\tedious\lib\connection.js:1022:18)
+      at RequestTokenHandler.onErrorMessage (C:\Users\hp\Desktop\API-gestion-stock\node_modules\tedious\lib\token\handler.js:285:21)
+      at Readable.<anonymous> (C:\Users\hp\Desktop\API-gestion-stock\node_modules\tedious\lib\token\token-stream-parser.js:19:33)
+      at Readable.emit (node:events:508:28)
+      at addChunk (node:internal/streams/readable:559:12)
+      at readableAddChunkPushObjectMode (node:internal/streams/readable:536:3)
+      at Readable.push (node:internal/streams/readable:391:5)
+      at nextAsync (node:internal/streams/from:194:22) {
+    info: ErrorMessageToken {
+      name: 'ERROR',
+      handlerName: 'onErrorMessage',
+      number: 2601,
+      state: 1,
+      class: 14,
+      message: "Cannot insert duplicate key row in object 'dbo.tblUser' with unique index 'UX_tblUser_PhoneNumber'. The duplicate key value is (611895388).",
+      serverName: 'DESKTOP-JH9P3FA\\SQLEXPRESS',
+      procName: 'dbo.usp_RequestAdminRegistration',
+      lineNumber: 28
+    }
+  },
+  number: 2601,
+  lineNumber: 28,
+  state: 1,
+  class: 14,
+  serverName: 'DESKTOP-JH9P3FA\\SQLEXPRESS',
+  procName: 'dbo.usp_RequestAdminRegistration',
+  precedingErrors: []
+}
+[Erreur] TypeError: Cannot read properties of undefined (reading 'identifier')
+    at C:\Users\hp\Desktop\API-gestion-stock\controllers\authController.js:80:31
+    at C:\Users\hp\Desktop\API-gestion-stock\middleware\asyncHandler.js:8:19
+    at Layer.handleRequest (C:\Users\hp\Desktop\API-gestion-stock\node_modules\router\lib\layer.js:152:17)
+    at next (C:\Users\hp\Desktop\API-gestion-stock\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (C:\Users\hp\Desktop\API-gestion-stock\node_modules\router\lib\route.js:117:3)
+    at handle (C:\Users\hp\Desktop\API-gestion-stock\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (C:\Users\hp\Desktop\API-gestion-stock\node_modules\router\lib\layer.js:152:17)
+    at C:\Users\hp\Desktop\API-gestion-stock\node_modules\router\index.js:295:15
+    at processParams (C:\Users\hp\Desktop\API-gestion-stock\node_modules\router\index.js:582:12)
+    at next (C:\Users\hp\Desktop\API-gestion-stock\node_modules\router\index.js:291:5)
+[Erreur] TypeError: Cannot read properties of undefined (reading 'identifier')
+    at C:\Users\hp\Desktop\API-gestion-stock\controllers\authController.js:80:31
+    at C:\Users\hp\Desktop\API-gestion-stock\middleware\asyncHandler.js:8:19
+    at Layer.handleRequest (C:\Users\hp\Desktop\API-gestion-stock\node_modules\router\lib\layer.js:152:17)
+    at next (C:\Users\hp\Desktop\API-gestion-stock\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (C:\Users\hp\Desktop\API-gestion-stock\node_modules\router\lib\route.js:117:3)
+    at handle (C:\Users\hp\Desktop\API-gestion-stock\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (C:\Users\hp\Desktop\API-gestion-stock\node_modules\router\lib\layer.js:152:17)
+    at C:\Users\hp\Desktop\API-gestion-stock\node_modules\router\index.js:295:15
+    at processParams (C:\Users\hp\Desktop\API-gestion-stock\node_modules\router\index.js:582:12)
+    at next (C:\Users\hp\Desktop\API-gestion-stock\node_modules\router\index.js:291:5)
+[Erreur] Error: Un compte avec cet email existe déjà.
+    at UserDAL._mapSqlError (C:\Users\hp\Desktop\API-gestion-stock\dal\userDAL.js:28:29)
+    at UserDAL.requestAdminRegistration (C:\Users\hp\Desktop\API-gestion-stock\dal\userDAL.js:285:27)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async C:\Users\hp\Desktop\API-gestion-stock\controllers\authController.js:58:18 {
+  sqlNumber: 51000
+}
