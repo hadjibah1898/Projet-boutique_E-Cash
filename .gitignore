@@ -1,0 +1,39 @@
+# Variables d'environnement et secrets
+.env
+.env.*
+!.env.example
+
+# Dépendances
+node_modules/
+
+# Fichiers de logs
+*.log
+logs/
+se.log
+
+# Fichiers temporaires
+tmp/
+temp/
+tmp-pid.txt
+
+# Fichiers générés
+dist/
+build/
+coverage/
+
+# Fichiers système et éditeurs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Certificats et clés privées
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Sauvegardes locales
+*.bak
+*.backup
+*.bundle
