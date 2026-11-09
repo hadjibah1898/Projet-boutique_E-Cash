@@ -19,5 +19,8 @@ v33/
 v34/
 .env/
 .env.production
+.scripts/
+.build/.log/
+
 
 
