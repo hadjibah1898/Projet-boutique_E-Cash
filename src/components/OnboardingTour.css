@@ -1,0 +1,66 @@
+/* src/components/OnboardingTour.css */
+/* Styles pour le guide interactif d'onboarding */
+
+.onboarding-tour-modal .modal-content {
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+.onboarding-tour-modal .modal-dialog {
+    max-width: 500px;
+}
+
+.onboarding-tour-modal .progress-bar {
+    transition: width 0.4s ease;
+}
+
+/* Animation d'entrée pour le modal */
+.onboarding-tour-modal.show .modal-content {
+    animation: tourFadeInUp 0.4s ease-out;
+}
+
+@keyframes tourFadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Pulsation légère pour l'icône de l'étape */
+.onboarding-tour-modal .bg-primary-subtle {
+    animation: tourPulse 3s ease-in-out infinite;
+}
+
+@keyframes tourPulse {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+}
+
+/* Points de progression */
+.onboarding-tour-modal .rounded-pill {
+    transition: all 0.3s ease;
+}
+
+/* Animation de transition entre les étapes */
+.onboarding-tour-modal .modal-body {
+    animation: tourSlideIn 0.35s ease-out;
+}
+
+@keyframes tourSlideIn {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}

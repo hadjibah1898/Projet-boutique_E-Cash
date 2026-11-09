@@ -1,0 +1,8 @@
+/* Global Styles for StockDash */
+
+.blink-animation {
+    animation: blinker 1.5s linear infinite;
+}
+@keyframes blinker {
+    50% { opacity: 0.3; }
+}

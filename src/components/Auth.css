@@ -1,0 +1,171 @@
+/* src/components/Auth.css */
+
+.auth-page {
+    background-color: var(--bs-body-bg);
+    min-height: 100vh;
+    min-height: 100dvh; 
+    overflow-x: hidden; 
+}
+
+/* Ajout d'une largeur maximale pour les très grands écrans */
+.auth-card {
+    max-width: 950px; 
+    margin: 0 auto; 
+    border-radius: 20px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
+    border: none;
+    background-color: var(--bs-card-bg);
+}
+
+[data-bs-theme="dark"] .auth-card {
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+}
+
+/* Panneau d'information à gauche */
+.auth-info-panel {
+    background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%);
+    border-top-left-radius: 20px;
+    border-bottom-left-radius: 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow-wrap: break-word; 
+    word-wrap: break-word;
+}
+
+/* Logo mobile */
+.auth-mobile-logo {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 18px rgba(13, 110, 253, 0.35);
+}
+
+.auth-title {
+    font-size: clamp(1.4rem, 4vw, 1.75rem);
+}
+
+.auth-subtitle {
+    font-size: clamp(0.85rem, 2.6vw, 0.95rem);
+}
+
+/* Champs de formulaire avec icônes */
+.input-group-icon {
+    position: relative;
+}
+
+.input-group-icon .form-icon {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #495057;
+    font-size: 1.2rem;
+    z-index: 3;
+    pointer-events: none; 
+}
+
+.input-group-icon .form-control {
+    padding-left: 3rem;
+    border-radius: 10px;
+    height: 48px;
+    background-color: var(--bs-tertiary-bg);
+    border: 2px solid var(--bs-border-color);
+    transition: all 0.2s ease;
+    font-size: 16px; 
+}
+
+.input-group-icon .form-control.has-trailing-icon {
+    padding-right: 2.75rem;
+}
+
+.password-toggle {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: pointer;
+    color: #adb5bd;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    user-select: none;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.password-toggle:hover,
+.password-toggle:focus-visible {
+    background-color: rgba(13, 110, 253, 0.08);
+    color: var(--bs-primary);
+    outline: none;
+}
+
+.form-control:focus {
+    background-color: var(--bs-body-bg);
+    box-shadow: 0 0 0 4px rgba(13, 110, 253, 0.2);
+    border-color: var(--bs-primary);
+}
+
+[data-bs-theme="dark"] .input-group-icon .form-icon,
+[data-bs-theme="dark"] .password-toggle {
+    color: var(--bs-secondary-color);
+}
+
+.auth-submit-btn {
+    min-height: 46px;
+}
+
+/* ============================================
+   RESPONSIVE 
+   ============================================ */
+
+@media (max-width: 767.98px) {
+    .auth-page {
+        background-color: var(--bs-card-bg);
+    }
+
+    .auth-card {
+        border-radius: 0;
+        box-shadow: none !important;
+        max-width: 100%; /* Annule le max-width sur mobile pour prendre tout l'écran */
+    }
+
+    .auth-card-body {
+        padding: 1.5rem 1.25rem !important;
+    }
+
+    .input-group-icon .form-control {
+        height: 52px;
+    }
+
+    .auth-submit-btn {
+        min-height: 50px;
+        font-size: 1rem;
+    }
+
+    .password-toggle {
+        width: 40px;
+        height: 40px;
+    }
+
+    .auth-options {
+        row-gap: 0.75rem;
+    }
+
+    .forgot-modal .modal-body {
+        padding: 1rem 1.25rem;
+    }
+
+    .forgot-modal .modal-footer .btn {
+        min-height: 46px;
+        font-size: 1rem;
+    }
+}

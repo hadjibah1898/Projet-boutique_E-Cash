@@ -1,0 +1,250 @@
+/* Styles spécifiques aux secteurs d'activité */
+
+/* --- MODE BOITE DE NUIT (NIGHTCLUB) --- */
+[data-secteur="Boite de nuit"] {
+    --bs-body-bg: #0f1114;
+    --bs-body-color: #cdd9e5;
+}
+
+[data-secteur="Boite de nuit"] .card {
+    background-color: #1c2128 !important;
+    border: 1px solid #444c56 !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
+}
+
+[data-secteur="Boite de nuit"] .table {
+    --bs-table-color: #adbac7;
+    --bs-table-bg: transparent;
+    --bs-table-border-color: #444c56;
+}
+
+[data-secteur="Boite de nuit"] .btn-primary {
+    background-color: #8957e5 !important;
+    /* Violet Néon */
+    border-color: #8957e5 !important;
+    box-shadow: 0 0 15px rgba(137, 87, 229, 0.4);
+}
+
+[data-secteur="Boite de nuit"] .btn-quick-entry {
+    background-color: #00f2ff !important;
+    /* Bleu Cyan Néon */
+    border-color: #00f2ff !important;
+    color: #000 !important;
+    font-weight: 800 !important;
+    text-transform: uppercase;
+    box-shadow: 0 0 10px rgba(0, 242, 255, 0.5);
+}
+
+.bar-account-theme {
+    /* Couleurs de base pour le thème Bar */
+    --bs-primary: #8957e5;
+    /* Violet Néon */
+    --bs-primary-rgb: 137, 87, 229;
+    --bs-primary-bg-subtle: #2e2642;
+    /* Fond subtil violet foncé */
+    --bs-primary-text-emphasis: #c3b4fc;
+
+    --bs-success: #00f2ff;
+    /* Bleu Cyan Néon */
+    --bs-success-rgb: 0, 242, 255;
+    --bs-success-bg-subtle: #003333;
+    --bs-success-text-emphasis: #00ffff;
+
+    --bs-warning: #ffc107;
+    /* Jaune/Orange pour les alertes */
+    --bs-warning-rgb: 255, 193, 7;
+    --bs-warning-bg-subtle: #332800;
+    --bs-warning-text-emphasis: #ffdb80;
+
+    --bs-danger: #ff416c;
+    /* Rose/Rouge Néon */
+    --bs-danger-rgb: 255, 65, 108;
+    --bs-danger-bg-subtle: #42111c;
+    --bs-danger-text-emphasis: #ff80a0;
+
+    --bs-info: #00f2ff;
+    /* Info = Bleu Cyan Néon */
+    --bs-info-rgb: 0, 242, 255;
+    --bs-info-bg-subtle: #003333;
+    --bs-info-text-emphasis: #00ffff;
+
+    /* Couleurs de fond et de texte pour le thème sombre */
+    --bs-body-bg: #0f1114;
+    /* Fond très sombre */
+    --bs-body-color: #cdd9e5;
+    /* Texte clair */
+    --bs-card-bg: #1c2128;
+    /* Fond des cartes plus sombre */
+    --bs-border-color: #444c56;
+    /* Bordures discrètes */
+}
+
+.bar-account-theme .bar-card:hover {
+    box-shadow: 0 0 15px rgba(111, 66, 193, 0.4) !important;
+    transform: scale(1.02);
+}
+
+/* Styles spécifiques pour les éléments Bootstrap dans le thème Bar */
+.bar-account-theme .card {
+    background-color: var(--bs-card-bg) !important;
+    border: 1px solid var(--bs-border-color) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
+}
+
+.bar-account-theme .table {
+    --bs-table-color: var(--bs-body-color);
+    --bs-table-bg: transparent;
+    --bs-table-border-color: var(--bs-border-color);
+}
+
+.bar-account-theme .btn-primary {
+    background-color: var(--bs-primary) !important;
+    border-color: var(--bs-primary) !important;
+    box-shadow: 0 0 15px rgba(var(--bs-primary-rgb), 0.4);
+}
+
+.bar-account-theme .btn-outline-primary {
+    color: var(--bs-primary) !important;
+    border-color: var(--bs-primary) !important;
+}
+
+.bar-account-theme .btn-success {
+    background-color: var(--bs-success) !important;
+    border-color: var(--bs-success) !important;
+    color: #000 !important;
+    /* Texte noir sur vert néon */
+    box-shadow: 0 0 15px rgba(var(--bs-success-rgb), 0.4);
+}
+
+.bar-account-theme .btn-outline-success {
+    color: var(--bs-success) !important;
+    border-color: var(--bs-success) !important;
+}
+
+.bar-account-theme .btn-danger {
+    background-color: var(--bs-danger) !important;
+    border-color: var(--bs-danger) !important;
+    box-shadow: 0 0 15px rgba(var(--bs-danger-rgb), 0.4);
+}
+
+.bar-account-theme .btn-outline-danger {
+    color: var(--bs-danger) !important;
+    border-color: var(--bs-danger) !important;
+}
+
+.bar-account-theme .btn-warning {
+    background-color: var(--bs-warning) !important;
+    border-color: var(--bs-warning) !important;
+    color: #000 !important;
+    /* Texte noir sur jaune néon */
+    box-shadow: 0 0 15px rgba(var(--bs-warning-rgb), 0.4);
+}
+
+.bar-account-theme .btn-outline-warning {
+    color: var(--bs-warning) !important;
+    border-color: var(--bs-warning) !important;
+}
+
+.bar-account-theme .btn-info {
+    background-color: var(--bs-info) !important;
+    border-color: var(--bs-info) !important;
+    color: #000 !important;
+    /* Texte noir sur bleu néon */
+    box-shadow: 0 0 15px rgba(var(--bs-info-rgb), 0.4);
+}
+
+.bar-account-theme .btn-outline-info {
+    color: var(--bs-info) !important;
+    border-color: var(--bs-info) !important;
+}
+
+/* Badges */
+.bar-account-theme .badge.bg-primary {
+    background-color: var(--bs-primary) !important;
+    color: #fff !important;
+}
+
+.bar-account-theme .badge.bg-success {
+    background-color: var(--bs-success) !important;
+    color: #000 !important;
+}
+
+.bar-account-theme .badge.bg-danger {
+    background-color: var(--bs-danger) !important;
+    color: #fff !important;
+}
+
+.bar-account-theme .badge.bg-warning {
+    background-color: var(--bs-warning) !important;
+    color: #000 !important;
+}
+
+.bar-account-theme .badge.bg-info {
+    background-color: var(--bs-info) !important;
+    color: #000 !important;
+}
+
+/* Subtles */
+.bar-account-theme .bg-primary-subtle {
+    background-color: var(--bs-primary-bg-subtle) !important;
+}
+
+.bar-account-theme .text-primary-emphasis {
+    color: var(--bs-primary-text-emphasis) !important;
+}
+
+.bar-account-theme .bg-success-subtle {
+    background-color: var(--bs-success-bg-subtle) !important;
+}
+
+.bar-account-theme .text-success-emphasis {
+    color: var(--bs-success-text-emphasis) !important;
+}
+
+.bar-account-theme .bg-danger-subtle {
+    background-color: var(--bs-danger-bg-subtle) !important;
+}
+
+.bar-account-theme .text-danger-emphasis {
+    color: var(--bs-danger-text-emphasis) !important;
+}
+
+.bar-account-theme .bg-warning-subtle {
+    background-color: var(--bs-warning-bg-subtle) !important;
+}
+
+.bar-account-theme .text-warning-emphasis {
+    color: var(--bs-warning-text-emphasis) !important;
+}
+
+.bar-account-theme .bg-info-subtle {
+    background-color: var(--bs-info-bg-subtle) !important;
+}
+
+.bar-account-theme .text-info-emphasis {
+    color: var(--bs-info-text-emphasis) !important;
+}
+
+/* Form controls */
+.bar-account-theme .form-control,
+.bar-account-theme .form-select,
+.bar-account-theme .input-group-text {
+    background-color: #22272e;
+    color: #cdd9e5;
+    border-color: #444c56;
+}
+
+.bar-account-theme .form-control::placeholder {
+    color: #8b949e;
+}
+
+.bar-account-theme .form-control:focus,
+.bar-account-theme .form-select:focus {
+    border-color: var(--bs-primary);
+    box-shadow: 0 0 0 0.25rem rgba(var(--bs-primary-rgb), 0.25);
+}
+
+/* Specific for GerantDashboard */
+.bar-account-theme .stat-card {
+    border-left: 4px solid var(--bs-primary) !important;
+}

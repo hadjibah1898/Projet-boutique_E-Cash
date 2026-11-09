@@ -1,0 +1,269 @@
+/* Styles inspirés d'Odoo pour le POS Caissier */
+
+.caissier-pos-container {
+    padding: 1rem;
+    background: #f8f9fa;
+    min-height: 100vh;
+}
+
+/* Header Cards */
+.caissier-pos-container .card {
+    border-radius: 0.5rem;
+    transition: all 0.3s ease;
+}
+
+.caissier-pos-container .card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Product Grid */
+.caissier-pos-container .product-card {
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 2px solid transparent;
+    border-radius: 0.5rem;
+}
+
+.caissier-pos-container .product-card:hover {
+    border-color: #0d6efd;
+    transform: translateY(-3px);
+    box-shadow: 0 4px 8px rgba(13, 110, 253, 0.15);
+}
+
+.caissier-pos-container .product-card.selected {
+    border-color: #0d6efd;
+    background-color: #e7f1ff;
+}
+
+/* Cart Styles */
+.caissier-pos-container .cart-item {
+    border-left: 3px solid #0d6efd;
+    transition: all 0.2s ease;
+}
+
+.caissier-pos-container .cart-item:hover {
+    background-color: #f8f9fa;
+}
+
+/* Buttons */
+.caissier-pos-container .btn-pay {
+    background: linear-gradient(135deg, #198754 0%, #157347 100%);
+    border: none;
+    color: white;
+    font-weight: 600;
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.5rem;
+    transition: all 0.3s ease;
+}
+
+.caissier-pos-container .btn-pay:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(25, 135, 84, 0.3);
+}
+
+.caissier-pos-container .btn-pay:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* Search Input */
+.caissier-pos-container .search-input {
+    border-radius: 0.5rem;
+    border: 2px solid #dee2e6;
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+    transition: all 0.2s ease;
+}
+
+.caissier-pos-container .search-input:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15);
+}
+
+/* Category Badge */
+.caissier-pos-container .category-badge {
+    background: #e9ecef;
+    color: #495057;
+    padding: 0.5rem 1rem;
+    border-radius: 2rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 2px solid transparent;
+}
+
+.caissier-pos-container .category-badge:hover {
+    background: #dee2e6;
+}
+
+.caissier-pos-container .category-badge.active {
+    background: #0d6efd;
+    color: white;
+    border-color: #0d6efd;
+}
+
+/* Quantity Controls */
+.caissier-pos-container .quantity-control {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.caissier-pos-container .quantity-control button {
+    width: 32px;
+    height: 32px;
+    border-radius: 0.375rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+/* Payment Modal */
+.caissier-pos-container .payment-modal .modal-content {
+    border-radius: 1rem;
+    border: none;
+}
+
+.caissier-pos-container .payment-modal .modal-header {
+    background: linear-gradient(135deg, #198754 0%, #157347 100%);
+    color: white;
+    border-radius: 1rem 1rem 0 0;
+}
+
+/* Stock Badge */
+.caissier-pos-container .stock-badge {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.375rem;
+    font-weight: 600;
+}
+
+/* Price Display */
+.caissier-pos-container .price-display {
+    font-weight: 700;
+    color: #0d6efd;
+    font-size: 1rem;
+}
+
+/* Cart Summary */
+.caissier-pos-container .cart-summary {
+    background: #f8f9fa;
+    border-radius: 0.5rem;
+    padding: 1rem;
+}
+
+.caissier-pos-container .cart-summary .total {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #0d6efd;
+}
+
+/* Keyboard Shortcuts */
+.caissier-pos-container .shortcuts-card {
+    background: rgba(255, 255, 255, 0.95);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    border-radius: 0.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Responsive */
+@media (max-width: 991px) {
+    .caissier-pos-container {
+        padding: 0.5rem;
+    }
+    
+    .caissier-pos-container .product-card {
+        margin-bottom: 0.5rem;
+    }
+}
+
+/* Animations */
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.caissier-pos-container .cart-item {
+    animation: slideIn 0.3s ease;
+}
+
+/* Scrollbar Styling */
+.caissier-pos-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.caissier-pos-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.caissier-pos-container::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.caissier-pos-container::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Discount Badge */
+.caissier-pos-container .discount-badge {
+    background: #dc3545;
+    color: white;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+/* Empty Cart */
+.caissier-pos-container .empty-cart {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: #6c757d;
+}
+
+.caissier-pos-container .empty-cart iconify-icon {
+    font-size: 64px;
+    opacity: 0.3;
+    margin-bottom: 1rem;
+}
+
+/* Client Select */
+.caissier-pos-container .client-select {
+    border-radius: 0.5rem;
+    border: 2px solid #dee2e6;
+    padding: 0.5rem;
+}
+
+/* Payment Methods */
+.caissier-pos-container .payment-method-option {
+    padding: 0.75rem;
+    border: 2px solid #dee2e6;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: center;
+}
+
+.caissier-pos-container .payment-method-option:hover {
+    border-color: #0d6efd;
+    background-color: #e7f1ff;
+}
+
+.caissier-pos-container .payment-method-option.selected {
+    border-color: #0d6efd;
+    background-color: #e7f1ff;
+    font-weight: 600;
+}

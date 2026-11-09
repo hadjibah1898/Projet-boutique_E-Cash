@@ -1,0 +1,10 @@
+.inbox-popover {
+    border: none;
+    min-width: 350px;
+}
+
+.inbox-popover .popover-header {
+    background-color: white;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 1.1rem;
+}

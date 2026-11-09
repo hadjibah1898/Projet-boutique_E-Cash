@@ -1,0 +1,669 @@
+// src/components/ClientsView.js
+// Composant de gestion des clients
+// Permet de visualiser, créer, modifier et supprimer les clients
+// Affiche l'historique des achats et les remises accordées
+// Contient les fonctionnalités de recherche et de filtres
+
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Button, Form, Alert, Spinner, Badge, Card, Tab, Tabs, Modal, Collapse } from 'react-bootstrap';
+import TableComponent from './common/Table';
+import { clientAPI } from '../services/api';
+import XLSX from 'xlsx-js-style';
+import ClientModal from './common/ClientModal'; // Importer le composant réutilisable
+import CrmDashboard from './CrmDashboard'; // Tableau de bord CRM moderne
+
+const ClientsView = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Récupérer le rôle depuis le localStorage (ou autre méthode d'auth)
+  const userRole = localStorage.getItem('userRole');
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  // --- Filtres avancés ---
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterType, setFilterType] = useState('Tous');
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
+  const [filterMinAchats, setFilterMinAchats] = useState('');
+  const [filterMaxAchats, setFilterMaxAchats] = useState('');
+  const [filterMinDette, setFilterMinDette] = useState('');
+  const [filterMaxDette, setFilterMaxDette] = useState('');
+  const [filterSortBy, setFilterSortBy] = useState('nom');
+  const [filterSortOrder, setFilterSortOrder] = useState('asc');
+  
+  const [debtHistory, setDebtHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [crmData, setCrmData] = useState([]);
+  const [crmLoading, setCrmLoading] = useState(false);
+  const [crmQuartiers, setCrmQuartiers] = useState([]);
+// États pour Modale Création/Édition
+  const [showModal, setShowModal] = useState(false);
+  const [currentClient, setCurrentClient] = useState(null);
+  // États pour Modale de Relance (personnalisation du message)
+  const [showRelanceModal, setShowRelanceModal] = useState(false);
+  const [relanceClientId, setRelanceClientId] = useState(null);
+  const [relanceClientNom, setRelanceClientNom] = useState('');
+  const [relanceMessage, setRelanceMessage] = useState('');
+  const [relanceSending, setRelanceSending] = useState(false);
+
+  const fetchClients = useCallback(async () => {
+    try {
+      setLoading(true);
+      // Simulation de données si l'API n'est pas encore prête côté backend
+      try {
+          const res = await clientAPI.getAll();
+          // L'intercepteur Axios unwrappe déjà : res est le tableau directement
+          setClients(Array.isArray(res) ? res : (res.data || []));
+      } catch (e) {
+          console.warn("API Clients non disponible, utilisation tableau vide");
+          setClients([]);
+      }
+    } catch (err) {
+      setError("Erreur lors du chargement des clients.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const fetchDebtHistory = useCallback(async () => {
+    try {
+        setHistoryLoading(true);
+        const res = await clientAPI.getDebtHistory();
+        // L'intercepteur Axios unwrappe déjà : res est le tableau directement
+        setDebtHistory(Array.isArray(res) ? res : (res.data || []));
+    } catch (err) {
+        setError("Erreur lors du chargement de l'historique des dettes.");
+    } finally {
+        setHistoryLoading(false);
+    }
+  }, []);
+
+  const fetchCrmAnalytics = useCallback(async () => {
+    try {
+        setCrmLoading(true);
+        const [analyticsRes, quartiersRes] = await Promise.all([
+            clientAPI.getCrmAnalytics(),
+            clientAPI.getCrmQuartiers()
+        ]);
+        setCrmData(Array.isArray(analyticsRes) ? analyticsRes : (analyticsRes.data || []));
+        setCrmQuartiers(Array.isArray(quartiersRes) ? quartiersRes : (quartiersRes.data || []));
+    } catch (err) {
+        console.error("Erreur CRM:", err);
+    } finally {
+        setCrmLoading(false);
+    }
+  }, []);
+
+// Ouvre la modale de relance pour personnaliser le message avant envoi
+  const handleRelancerClient = (clientId, clientNom) => {
+    setRelanceClientId(clientId);
+    setRelanceClientNom(clientNom);
+    setRelanceMessage('');
+    setShowRelanceModal(true);
+  };
+
+  // Envoie effectivement l'email de relance avec le message personnalisé (ou le message par défaut)
+  const confirmRelance = async () => {
+    setRelanceSending(true);
+    try {
+        await clientAPI.relancerClient(relanceClientId, { message: relanceMessage });
+        setSuccessMessage(`Relance envoyée à ${relanceClientNom} par email.`);
+        setShowRelanceModal(false);
+        setTimeout(() => setSuccessMessage(''), 4000);
+    } catch (err) {
+        setError(err.response?.data?.message || "Erreur lors de l'envoi de la relance.");
+    } finally {
+        setRelanceSending(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchClients();
+    fetchDebtHistory();
+    fetchCrmAnalytics();
+  }, [fetchClients, fetchDebtHistory, fetchCrmAnalytics]);
+
+  // Effet pour gérer l'ouverture via notification
+  useEffect(() => {
+    if (!loading && clients.length > 0) {
+        const openClientId = searchParams.get('openClient');
+        if (openClientId) {
+            const client = clients.find(c => c.customerId === openClientId || c.customerId === parseInt(openClientId));
+            if (client) {
+                handleShowModal(client);
+                setSearchParams(params => {
+                    params.delete('openClient');
+                    return params;
+                });
+            }
+        }
+    }
+  }, [loading, clients, searchParams, setSearchParams]);
+
+  // --- Gestion Création / Édition ---
+  const handleShowModal = (client = null) => {
+    if (client) {
+      setCurrentClient(client);
+    } else {
+      setCurrentClient(null);
+    }
+    setShowModal(true);
+  };
+
+  const handleSaveClientSuccess = (savedClient, isEdit) => {
+    setSuccessMessage(isEdit ? 'Client mis à jour avec succès !' : 'Client créé avec succès !');
+    try {
+      fetchClients();
+      setShowModal(false);
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      setError(err.response?.data?.message || "Erreur d'enregistrement");
+    }
+  };
+
+  const handleExportExcel = () => {
+    const dataToExport = filteredClients.map(c => ({
+      'Nom': (c.vcLastName || '') + ' ' + (c.vcFirstName || ''),
+      'Email': c.vcEmail || '-',
+      'Téléphone': c.vcPhoneNumber || '-',
+      'Type': c.customerTypeCode,
+      'Total Achats (GNF)': c.totalAchats || 0,
+      'Dette Actuelle (GNF)': c.dette || 0,
+      'Date Création': new Date(c.createdAt).toLocaleDateString()
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Clients");
+    XLSX.writeFile(workbook, `export_clients_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  // --- Filtrage avancé ---
+  const filteredClients = useMemo(() => {
+    let result = clients.filter(c => 
+      (c.vcLastName && c.vcLastName.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (c.vcFirstName && c.vcFirstName.toLowerCase().includes(searchTerm.toLowerCase())) || 
+      (c.vcPhoneNumber && c.vcPhoneNumber.includes(searchTerm)) ||
+      (c.vcEmail && c.vcEmail.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+
+    // Filtre par type
+    if (filterType !== 'Tous') {
+      result = result.filter(c => c.customerTypeCode === filterType);
+    }
+
+    // Filtre par date de création
+    if (filterDateFrom) {
+      const from = new Date(filterDateFrom);
+      result = result.filter(c => c.createdAt && new Date(c.createdAt) >= from);
+    }
+    if (filterDateTo) {
+      const to = new Date(filterDateTo);
+      to.setHours(23, 59, 59, 999);
+      result = result.filter(c => c.createdAt && new Date(c.createdAt) <= to);
+    }
+
+    // Filtre par montant total achats
+    if (filterMinAchats !== '') {
+      result = result.filter(c => (c.totalAchats || 0) >= Number(filterMinAchats));
+    }
+    if (filterMaxAchats !== '') {
+      result = result.filter(c => (c.totalAchats || 0) <= Number(filterMaxAchats));
+    }
+
+    // Filtre par dette
+    if (filterMinDette !== '') {
+      result = result.filter(c => (c.dette || 0) >= Number(filterMinDette));
+    }
+    if (filterMaxDette !== '') {
+      result = result.filter(c => (c.dette || 0) <= Number(filterMaxDette));
+    }
+
+    // Tri
+    const sortFn = (a, b) => {
+      let valA, valB;
+      switch (filterSortBy) {
+        case 'nom': valA = (a.vcLastName || a.vcFirstName || '').toLowerCase(); valB = (b.vcLastName || b.vcFirstName || '').toLowerCase(); break;
+        case 'totalAchats': valA = a.totalAchats || 0; valB = b.totalAchats || 0; break;
+        case 'dette': valA = a.dette || 0; valB = b.dette || 0; break;
+        case 'createdAt': valA = new Date(a.createdAt || 0); valB = new Date(b.createdAt || 0); break;
+        default: valA = (a.vcLastName || a.vcFirstName || '').toLowerCase(); valB = (b.vcLastName || b.vcFirstName || '').toLowerCase();
+      }
+      if (valA < valB) return filterSortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return filterSortOrder === 'asc' ? 1 : -1;
+      return 0;
+    };
+    result.sort(sortFn);
+
+    return result;
+  }, [clients, searchTerm, filterType, filterDateFrom, filterDateTo, filterMinAchats, filterMaxAchats, filterMinDette, filterMaxDette, filterSortBy, filterSortOrder]);
+
+  // Nombre de filtres actifs
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filterType !== 'Tous') count++;
+    if (filterDateFrom) count++;
+    if (filterDateTo) count++;
+    if (filterMinAchats !== '') count++;
+    if (filterMaxAchats !== '') count++;
+    if (filterMinDette !== '') count++;
+    if (filterMaxDette !== '') count++;
+    return count;
+  }, [filterType, filterDateFrom, filterDateTo, filterMinAchats, filterMaxAchats, filterMinDette, filterMaxDette]);
+
+  const resetFilters = () => {
+    setFilterType('Tous');
+    setFilterDateFrom('');
+    setFilterDateTo('');
+    setFilterMinAchats('');
+    setFilterMaxAchats('');
+    setFilterMinDette('');
+    setFilterMaxDette('');
+    setFilterSortBy('nom');
+    setFilterSortOrder('asc');
+    setSearchTerm('');
+  };
+
+  // Meilleurs clients (Triés par Total Achats décroissant)
+  const bestClients = [...filteredClients].sort((a, b) => (b.totalAchats || 0) - (a.totalAchats || 0));
+
+  // Clients avec Dettes
+  const debtClients = filteredClients.filter(c => c.dette > 0);
+
+  // Ouvriers / Apporteurs d'affaires
+  const workers = filteredClients.filter(c => c.customerTypeCode === 'WORKER');
+
+    const columns = [
+    { key: 'vcLastName', label: 'Nom', render: (val, row) => `${row.vcFirstName || ''} ${val || ''}`.trim() || 'N/A' },
+    { key: 'vcEmail', label: 'Email', render: (val) => val || '-' },
+    { key: 'vcPhoneNumber', label: 'Téléphone', render: (val) => val || '-' },
+    { 
+      key: 'customerTypeCode', 
+      label: 'Type',
+      render: (type) => <Badge bg={type === 'WORKER' ? 'warning' : 'info'}>{type === 'WORKER' ? 'Ouvrier' : 'Client'}</Badge>
+    },
+    { 
+      key: 'totalAchats', 
+      label: 'Total Achats',
+      render: (val) => <span className="fw-bold text-success">{(val || 0).toLocaleString()} GNF</span>
+    },
+    {
+      key: 'totalPaye',
+      label: 'Montant Payé',
+      render: (val) => <span className="fw-bold text-primary">{(val || 0).toLocaleString()} GNF</span>
+    },
+    { 
+      key: 'dette', 
+      label: 'Dette',
+      render: (val, row) => (
+        val > 0 ? <Badge bg="danger">{(val).toLocaleString()} GNF</Badge> : <span className="text-muted">-</span>
+      )
+    },
+    {
+      key: 'echeanceDette',
+      label: "Échéance Dette",
+      render: (val, row) => row.dette > 0 && val ? new Date(val).toLocaleDateString() : <span className="text-muted">-</span>
+    },
+    {
+        key: 'dtCreatedAt',
+        label: 'Date Création',
+        render: (date) => date ? new Date(date).toLocaleDateString('fr-FR') : <span className="text-muted">-</span>
+    }
+  ];
+
+  // Regrouper les mouvements de dette par client pour un affichage cumulé
+  const safeDate = (val) => {
+    if (!val) return new Date(0);
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? new Date(0) : d;
+  };
+
+  const groupedDebtHistory = useMemo(() => {
+    const map = {};
+    (debtHistory || []).forEach(mvt => {
+      // Support multiple field name patterns from backend
+      const client = mvt.client || mvt.customer;
+      const clientId = client?.customerId || client?.clientId || mvt.clientId || mvt.customerId || 'unknown';
+      const clientNom = client ? `${client.vcFirstName || ''} ${client.vcLastName || ''}`.trim() || 'Client inconnu' : 'Client inconnu';
+      const montant = parseFloat(mvt.montant ?? mvt.amount ?? mvt.montantDette ?? 0) || 0;
+      const type = mvt.type || mvt.mouvementType || mvt.operationType || '';
+
+      if (!map[clientId]) {
+        map[clientId] = {
+          client: client,
+          clientNom,
+          totalDettes: 0,
+          totalRemboursements: 0,
+          soldeActuel: 0,
+          dernierMouvement: new Date(0),
+          nbMouvements: 0
+        };
+      }
+
+      if (type === 'CREATION') {
+        map[clientId].totalDettes += montant;
+        map[clientId].soldeActuel += montant;
+      } else if (type === 'REMBOURSEMENT') {
+        map[clientId].totalRemboursements += montant;
+        map[clientId].soldeActuel -= montant;
+      }
+      map[clientId].nbMouvements++;
+      const mvDate = safeDate(mvt.createdAt ?? mvt.date ?? mvt.dtCreatedAt ?? null);
+      if (mvDate > map[clientId].dernierMouvement) {
+        map[clientId].dernierMouvement = mvDate;
+      }
+    });
+    return Object.values(map).sort((a, b) => b.dernierMouvement - a.dernierMouvement);
+  }, [debtHistory]);
+
+  const debtHistoryColumns = [
+    { 
+        key: 'clientNom', 
+        label: 'Client',
+        render: (nom) => <span className="fw-bold">{nom}</span>
+    },
+    { 
+        key: 'nbMouvements', 
+        label: 'Nb Opérations',
+        render: (val) => <Badge bg="secondary">{val}</Badge>
+    },
+    { 
+        key: 'totalDettes', 
+        label: 'Total Dettes Créées',
+        render: (val) => <span className="fw-bold text-danger">+ {(val || 0).toLocaleString()} GNF</span>
+    },
+    { 
+        key: 'totalRemboursements', 
+        label: 'Total Remboursements',
+        render: (val) => <span className="fw-bold text-success">- {(val || 0).toLocaleString()} GNF</span>
+    },
+    { 
+        key: 'soldeActuel', 
+        label: 'Solde Actuel',
+        render: (val) => (
+            <span className={`fw-bold ${val > 0 ? 'text-danger' : 'text-success'}`}>
+                {(val || 0).toLocaleString()} GNF
+            </span>
+        )
+    },
+{ 
+        key: 'dernierMouvement', 
+        label: 'Dernière Opération',
+        render: (date) => {
+          if (!date || isNaN(date.getTime())) return <span className="text-muted">Date invalide</span>;
+          return <span>{date.toLocaleString('fr-FR')}</span>;
+        }
+    },
+  ];\n\n    // Colonnes spécifiques pour l'onglet Créances
+  const creancesColumns = [
+    {
+        key: 'nom',
+        label: 'Client',
+        render: (val, row) => <span className="fw-bold">{`${row.vcFirstName || ''} ${row.vcLastName || ''}`.trim() || 'N/A'}</span>
+    },
+    {
+        key: 'dette',
+        label: 'Montant Créance',
+        render: (val) => <span className="fw-bold text-danger">+ {(val || 0).toLocaleString()} GNF</span>
+    },
+    {
+        key: 'echeanceDette',
+        label: 'Échéance',
+        render: (val, row) => row.dette > 0 && val ? <span>{new Date(val).toLocaleDateString('fr-FR')}</span> : <span className="text-muted">-</span>
+    },
+    {
+        key: 'totalAchats',
+        label: 'Total Achats',
+        render: (val) => <span className="fw-bold text-secondary">{ (val || 0).toLocaleString() } GNF</span>
+    },
+    {
+        key: 'actions',
+        label: 'Action',
+        render: (val, row) => (
+            <Button variant="outline-warning" size="sm" onClick={() => handleRelancerClient(row.customerId, row.vcFirstName + ' ' + row.vcLastName)}>
+                Relancer
+            </Button>
+        )
+    }
+  ];
+
+  if (loading) return <Spinner animation="border" />;\n  const creancesColumns = [\n    {\n        key: 'nom',\n        label: 'Client',\n        render: (val, row) => <span className=\"fw-bold\">{`${row.vcFirstName || ''} ${row.vcLastName || ''}`.trim() || 'N/A'}</span>\n    },\n    {\n        key: 'dette',\n        label: 'Montant Créance',\n        render: (val) => <span className=\"fw-bold text-danger\">+ {(val || 0).toLocaleString()} GNF</span>\n    },\n    {\n        key: 'echeanceDette',\n        label: 'Échéance',\n        render: (val, row) => row.dette > 0 && val ? <span>{new Date(val).toLocaleDateString('fr-FR')}</span> : <span className=\"text-muted\">-</span>\n    },\n    {\n        key: 'totalAchats',\n        label: 'Total Achats',\n        render: (val) => <span className=\"fw-bold text-secondary\">{ (val || 0).toLocaleString() } GNF</span>\n    },\n    {\n        key: 'actions',\n        label: 'Action',\n        render: (val, row) => (\n            <Button variant=\"outline-warning\" size=\"sm\" onClick={() => handleRelancerClient(row.customerId, row.vcFirstName + ' ' + row.vcLastName)}>\n                Relancer\n            </Button>\n        )\n    }\n  ];\n\n  if (loading) return <Spinner animation=\"border\" />;
+
+  if (loading) return <Spinner animation="border" />;
+
+  return (
+    <div className="p-4">
+      <div className="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+        <h3 className="fw-bold mb-0">Gestion des Clients & Ouvriers</h3>
+        <div className="d-flex gap-2">
+          <Button variant="outline-success" onClick={handleExportExcel} className="rounded-pill px-4 shadow-sm">
+            <iconify-icon icon="solar:file-spreadsheet-bold" className="me-2 align-middle"></iconify-icon>
+            Exporter Excel
+          </Button>
+          {userRole === 'Gérant' && (
+            <Button variant="primary" onClick={() => handleShowModal()} className="rounded-pill px-4 shadow-sm">
+              <iconify-icon icon="solar:user-plus-bold" className="me-2 align-middle"></iconify-icon>
+              Nouveau Client
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {successMessage && <Alert variant="success">{successMessage}</Alert>}
+      {error && <Alert variant="danger" onClose={() => setError('')} dismissible>{error}</Alert>}
+
+      {/* --- Barre de recherche + Filtres --- */}
+      <div className="mb-3">
+        <div className="d-flex flex-wrap gap-2 align-items-center">
+          <Form.Control
+            type="text"
+            placeholder="Rechercher par nom, téléphone ou email..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{ maxWidth: '320px' }}
+            className="shadow-sm"
+          />
+          <Button
+            variant={showFilters ? 'primary' : 'outline-secondary'}
+            onClick={() => setShowFilters(!showFilters)}
+            className="rounded-pill px-3 shadow-sm"
+          >
+            <iconify-icon icon="solar:filter-bold" className="me-1 align-middle"></iconify-icon>
+            Filtres
+            {activeFilterCount > 0 && (
+              <Badge bg="danger" pill className="ms-1" style={{ fontSize: '0.65rem' }}>{activeFilterCount}</Badge>
+            )}
+          </Button>
+          {activeFilterCount > 0 && (
+            <Button variant="outline-danger" size="sm" onClick={resetFilters} className="rounded-pill px-3">
+              <iconify-icon icon="solar:close-circle-bold" className="me-1 align-middle"></iconify-icon>
+              Réinitialiser
+            </Button>
+          )}
+          <span className="text-muted" style={{ fontSize: '0.82rem' }}>
+            {filteredClients.length} client(s) trouvé(s)
+          </span>
+        </div>
+
+        {/* --- Panneau de filtres dépliable --- */}
+        <Collapse in={showFilters}>
+          <div className="mt-3 p-3 bg-light rounded-3 shadow-sm border">
+            <div className="row g-3">
+              {/* Type */}
+              <div className="col-md-3 col-sm-6">
+                <label className="form-label fw-bold" style={{ fontSize: '0.8rem' }}>
+                  <iconify-icon icon="solar:user-bold" className="me-1"></iconify-icon>Type
+                </label>
+                <Form.Select size="sm" value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+                  <option value="Tous">Tous les types</option>
+                  <option value="Client">Client</option>
+                  <option value="Ouvrier">Ouvrier</option>
+                </Form.Select>
+              </div>
+
+              {/* Date création - De */}
+              <div className="col-md-3 col-sm-6">
+                <label className="form-label fw-bold" style={{ fontSize: '0.8rem' }}>
+                  <iconify-icon icon="solar:calendar-bold" className="me-1"></iconify-icon>Date création (de)
+                </label>
+                <Form.Control type="date" size="sm" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} />
+              </div>
+
+              {/* Date création - À */}
+              <div className="col-md-3 col-sm-6">
+                <label className="form-label fw-bold" style={{ fontSize: '0.8rem' }}>
+                  <iconify-icon icon="solar:calendar-bold" className="me-1"></iconify-icon>Date création (à)
+                </label>
+                <Form.Control type="date" size="sm" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} />
+              </div>
+
+              {/* Total Achats Min */}
+              <div className="col-md-3 col-sm-6">
+                <label className="form-label fw-bold" style={{ fontSize: '0.8rem' }}>
+                  <iconify-icon icon="solar:wallet-bold" className="me-1"></iconify-icon>Achats min (GNF)
+                </label>
+                <Form.Control type="number" size="sm" min="0" placeholder="0" value={filterMinAchats} onChange={(e) => setFilterMinAchats(e.target.value)} />
+              </div>
+
+              {/* Total Achats Max */}
+              <div className="col-md-3 col-sm-6">
+                <label className="form-label fw-bold" style={{ fontSize: '0.8rem' }}>
+                  <iconify-icon icon="solar:wallet-bold" className="me-1"></iconify-icon>Achats max (GNF)
+                </label>
+                <Form.Control type="number" size="sm" min="0" placeholder="∞" value={filterMaxAchats} onChange={(e) => setFilterMaxAchats(e.target.value)} />
+              </div>
+
+              {/* Dette Min */}
+              <div className="col-md-3 col-sm-6">
+                <label className="form-label fw-bold" style={{ fontSize: '0.8rem' }}>
+                  <iconify-icon icon="solar:danger-circle-bold" className="me-1"></iconify-icon>Dette min (GNF)
+                </label>
+                <Form.Control type="number" size="sm" min="0" placeholder="0" value={filterMinDette} onChange={(e) => setFilterMinDette(e.target.value)} />
+              </div>
+
+              {/* Dette Max */}
+              <div className="col-md-3 col-sm-6">
+                <label className="form-label fw-bold" style={{ fontSize: '0.8rem' }}>
+                  <iconify-icon icon="solar:danger-circle-bold" className="me-1"></iconify-icon>Dette max (GNF)
+                </label>
+                <Form.Control type="number" size="sm" min="0" placeholder="∞" value={filterMaxDette} onChange={(e) => setFilterMaxDette(e.target.value)} />
+              </div>
+
+              {/* Tri */}
+              <div className="col-md-3 col-sm-6">
+                <label className="form-label fw-bold" style={{ fontSize: '0.8rem' }}>
+                  <iconify-icon icon="solar:sort-bold" className="me-1"></iconify-icon>Trier par
+                </label>
+                <div className="d-flex gap-1">
+                  <Form.Select size="sm" value={filterSortBy} onChange={(e) => setFilterSortBy(e.target.value)} className="flex-grow-1">
+                    <option value="nom">Nom</option>
+                    <option value="totalAchats">Total Achats</option>
+                    <option value="dette">Dette</option>
+                    <option value="createdAt">Date Création</option>
+                  </Form.Select>
+                  <Button
+                    size="sm"
+                    variant="outline-secondary"
+                    onClick={() => setFilterSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                    title={filterSortOrder === 'asc' ? 'Croissant' : 'Décroissant'}
+                  >
+                    <iconify-icon icon={filterSortOrder === 'asc' ? 'solar:arrow-up-bold' : 'solar:arrow-down-bold'}></iconify-icon>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Collapse>
+      </div>
+
+      <Card className="border-0 shadow-sm rounded-4 overflow-hidden">
+        <Card.Body className="p-0">
+            <Tabs defaultActiveKey="all" id="client-tabs" className="mb-3 px-3 pt-3 border-bottom-0">
+                <Tab eventKey="all" title="Tous les Clients">
+                    <TableComponent columns={columns} data={filteredClients} emptyMessage="Aucun client trouvé." />
+                </Tab>
+                <Tab eventKey="best" title={<span className="text-success"><iconify-icon icon="solar:cup-star-bold" className="me-1"></iconify-icon>Meilleurs Clients</span>}>
+                    <Alert variant="success" className="m-3">
+                        <iconify-icon icon="solar:info-circle-bold" className="me-2"></iconify-icon>
+                        Liste triée par chiffre d'affaires. Idéal pour identifier les clients à récompenser.
+                    </Alert>
+                    <TableComponent columns={columns} data={bestClients} emptyMessage="Aucune donnée." />
+                </Tab>
+                <Tab eventKey="debts" title={<span className="text-danger"><iconify-icon icon="solar:danger-circle-bold" className="me-1"></iconify-icon>Dettes ({debtClients.length})</span>}>
+                    <TableComponent columns={columns} data={debtClients} emptyMessage="Aucune dette en cours. Bravo !" />
+                </Tab>
+                <Tab eventKey="creances" title={<span className="text-warning"><iconify-icon icon="solar:receipt-tax-bold" className="me-1"></iconify-icon>Créances ({debtClients.length})</span>}>
+                    <TableComponent columns={creancesColumns} data={debtClients} emptyMessage="Aucune créance en cours. Bravo !" />
+                </Tab>
+                <Tab eventKey="workers" title={<span className="text-warning"><iconify-icon icon="solar:users-group-two-rounded-bold" className="me-1"></iconify-icon>Ouvriers / Apporteurs</span>}>
+                    <TableComponent columns={columns} data={workers} emptyMessage="Aucun ouvrier enregistré." />
+                </Tab>
+<Tab eventKey="debt-history" title={<span className="text-info"><iconify-icon icon="solar:history-bold" className="me-1"></iconify-icon>Historique Dettes</span>}>
+                    <TableComponent columns={debtHistoryColumns} data={groupedDebtHistory} loading={historyLoading} emptyMessage="Aucun mouvement de dette enregistré." />
+                </Tab>
+<Tab eventKey="crm" title={<span className="text-primary"><iconify-icon icon="solar:widget-bold" className="me-1"></iconify-icon>Analyse CRM</span>}>
+                    <div className="p-3">
+<CrmDashboard
+                            crmData={crmData}
+                            crmQuartiers={crmQuartiers}
+                            loading={crmLoading}
+                            onRelancer={handleRelancerClient}
+                            onSettingsUpdated={fetchCrmAnalytics}
+                        />
+                    </div>
+                </Tab>
+            </Tabs>
+        </Card.Body>
+      </Card>
+
+{/* Modale Création / Édition */}
+      <ClientModal
+        show={showModal}
+        onHide={() => setShowModal(false)}
+        clientToEdit={currentClient}
+        onSuccess={handleSaveClientSuccess}
+      />
+
+      {/* Modale de Relance (message personnalisé) */}
+      <Modal show={showRelanceModal} onHide={() => setShowRelanceModal(false)}>
+        <Modal.Header closeButton>
+          <Modal.Title>
+            <iconify-icon icon="solar:mail-bold" className="me-2 align-middle"></iconify-icon>
+            Envoyer une relance à {relanceClientNom}
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Form.Group className="mb-2">
+            <Form.Label>Message de relance (personnalisé)</Form.Label>
+            <Form.Control
+              as="textarea"
+              rows={7}
+              value={relanceMessage}
+              onChange={(e) => setRelanceMessage(e.target.value)}
+              placeholder={"Laissez vide pour utiliser le message automatique personnalisé (basé sur l'historique d'achat du client)."}
+            />
+          </Form.Group>
+          <small className="text-muted">
+            Si vide, un message automatique sera généré en fonction des habitudes d'achat du client (jours d'inactivité, dépense totale, catégorie préférée).
+          </small>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowRelanceModal(false)} disabled={relanceSending}>
+            Annuler
+          </Button>
+          <Button variant="primary" onClick={confirmRelance} disabled={relanceSending}>
+            {relanceSending ? <Spinner as="span" size="sm" animation="border" /> : (
+              <><iconify-icon icon="solar:send-bold" className="me-1 align-middle"></iconify-icon> Envoyer la relance</>
+            )}
+          </Button>
+        </Modal.Footer>
+      </Modal>
+    </div>
+  );
+};
+
+export default ClientsView;
