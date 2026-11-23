@@ -5,6 +5,7 @@
  */
 
 const CustomerDAL = require('../dal/customerDAL');
+const cashService = require('../services/cashService'); // ✅ IMPORT AJOUTÉ
 const asyncHandler = require('../middleware/asyncHandler');
 
 function resolveCompanyId(req) {
@@ -49,13 +50,16 @@ exports.create = asyncHandler(async (req, res) => {
 });
 
 exports.getByCompany = asyncHandler(async (req, res) => {
-  const requestedCompanyId = Number(req.params.companyId);
-  if (req.user.roleCode !== 'SUPER_ADMIN' && requestedCompanyId !== Number(req.user.companyId)) {
-    return res.status(403).json({ success: false, message: 'Accès refusé à cette entreprise.' });
-  }
-  res.json({ success: true, data: await CustomerDAL.getByCompanyId(requestedCompanyId) });
-});
+  const companyId = getCompanyId(req);
 
+  // Récupérer les boutiques actives ET désactivées.
+  const stores = await StoreDAL.getByCompanyId(companyId, false);
+
+  res.json({
+    success: true,
+    data: stores
+  });
+});
 /** Recherche clients (?companyId=&q=...) — écran caisse. */
 exports.search = asyncHandler(async (req, res) => {
   const { q } = req.query;
@@ -143,7 +147,7 @@ exports.getDebtEvolution = asyncHandler(async (req, res) => {
 });
 
 /**
- * ✅ NOUVELLE FONCTION : Enregistre un paiement de dette.
+ * ✅ Enregistre un paiement de dette.
  */
 exports.payDette = asyncHandler(async (req, res) => {
   const { customerId } = req.params;
@@ -160,7 +164,7 @@ exports.payDette = asyncHandler(async (req, res) => {
   }
 
   try {
-    // Appel de la méthode du DAL qu'on a créée juste avant
+    // 1. Appel de la méthode du DAL pour enregistrer le paiement
     const result = await CustomerDAL.payDebt(
       customerId, 
       companyId, 
@@ -169,6 +173,23 @@ exports.payDette = asyncHandler(async (req, res) => {
       transactionRef, 
       userId
     );
+
+    // 2. ✅ COMPTABILISATION DANS LA TRÉSORERIE (Si Admin)
+    const isAdmin = req.user.roleCode === 'ADMIN' || req.user.roleCode === 'SUPER_ADMIN';
+    if (isAdmin) {
+      try {
+        await cashService.enregistrerEncaissementDetteAdmin({
+          companyId,
+          montant: Number(montant),
+          userId,
+          modePaiement: modePaiement || 'Cash', // ✅ On passe le mode de paiement
+          description: `Encaissement dette client ID ${customerId} (${modePaiement || 'Cash'})`
+        });
+      } catch (treasuryError) {
+        console.error("Attention : Le paiement a réussi mais la trésorerie n'a pas été mise à jour :", treasuryError);
+        // On continue car le paiement de la dette est déjà validé en base.
+      }
+    }
     
     res.status(200).json({ success: true, data: result });
   } catch (err) {

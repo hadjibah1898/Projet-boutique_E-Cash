@@ -8,25 +8,61 @@
 
 const { poolPromise, sql } = require('../config/db');
 
+// ✅ Fonction pour extraire et parser le JSON renvoyé par SQL Server
+const extractJson = (recordset) => {
+  if (!recordset || recordset.length === 0) return null;
+  const row = recordset[0];
+  if (!row) return null;
+  const keys = Object.keys(row);
+  if (keys.length === 0) return null;
+  const val = row[keys[0]];
+  if (typeof val === 'string') {
+    try { return JSON.parse(val); } catch (e) { return null; }
+  }
+  return val;
+};
+
 class DashboardDAL {
-  /**
-   * Statistiques globales pour le tableau de bord.
-   * @param {number|null} companyId - Filtre par entreprise (Admin).
-   * @param {number|null} storeId - Filtre par boutique (Gérant).
-   * @param {string} range - Période (monthly, yearly, etc.)
-   */
-  static async getSuperAdminStats(companyId = null, storeId = null, range = 'monthly') {
-    const pool = await poolPromise;
-    const result = await pool.request()
-      .input('companyId', sql.Int, companyId)
-      .input('storeId', sql.Int, storeId) // ✅ On ajoute le filtre boutique
-      .input('range', sql.VarChar(20), range) // ✅ On ajoute la période
-      .execute('dbo.usp_GetSuperAdminDashboardStats');
+  static async getStats(companyId = null, storeId = null, range = 'monthly') {
+    try {
+      const pool = await poolPromise;
+      const result = await pool.request()
+        .input('companyId', sql.Int, companyId || null)
+        .input('storeId', sql.Int, storeId || null)
+        .input('range', sql.VarChar(20), range || 'monthly')
+        .execute('dbo.usp_GetSuperAdminDashboardStats');
 
-    const counters = (result.recordsets && result.recordsets[0] && result.recordsets[0][0]) || {};
-    const entreprises = (result.recordsets && result.recordsets[1]) || [];
+      // 1. Compteurs globaux (Recordset 0)
+      const counters = (result.recordsets?.[0]?.[0]) || {};
+      
+      // 2. On extrait les JSON
+      const detailedSales = extractJson(result.recordsets?.[1]) || [];
+      
+      let salesProfit = extractJson(result.recordsets?.[2]) || { categories: [], series: [] };
+      if (Array.isArray(salesProfit) && salesProfit.length > 0) salesProfit = salesProfit[0];
 
-    return { ...counters, entreprises };
+      let productSalesRaw = extractJson(result.recordsets?.[3]) || [];
+      let productSales = { labels: [], series: [] };
+      if (Array.isArray(productSalesRaw)) {
+          productSales.labels = productSalesRaw.map(p => p.label);
+          productSales.series = productSalesRaw.map(p => p.value);
+      }
+
+      const performanceBoutiques = extractJson(result.recordsets?.[4]) || [];
+      const performanceGerants = extractJson(result.recordsets?.[5]) || [];
+
+      return { 
+        ...counters, 
+        detailedSales, 
+        salesProfit, 
+        productSales, 
+        performanceBoutiques, 
+        performanceGerants 
+      };
+    } catch (err) {
+      console.error("❌ Erreur DAL Dashboard :", err.message);
+      throw err;
+    }
   }
 }
 

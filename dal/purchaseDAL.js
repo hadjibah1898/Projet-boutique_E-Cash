@@ -137,12 +137,28 @@ class PurchaseDAL {
     }
   }
 
-  /** Liste des achats d'une boutique via dbo.sp_GetPurchasesByStore (vw_PurchaseDetails). */
-  static async getByStore(storeId) {
+  /**
+   * Liste des achats d'une boutique via dbo.sp_GetPurchasesByStore (vw_PurchaseDetails).
+   * @param {number} storeId
+   * @param {number} companyId - ✅ NOUVEAU : ID de l'entreprise pour isolation
+   * @returns {Promise<Array>}
+   */
+  static async getByStore(storeId, companyId) {
     try {
       const pool = await poolPromise;
+      
+      // 🛡️ PROTECTION ABSOLUE : Si le contrôleur envoie un objet par erreur, on décale les paramètres
+      if (typeof companyId === 'object' && companyId !== null) {
+          companyId = null;
+      }
+
+      // 🛡️ On force la conversion en entier pour SQL Server
+      const safeCompanyId = companyId ? parseInt(companyId, 10) : null;
+      const safeStoreId = storeId ? parseInt(storeId, 10) : null;
+
       const result = await pool.request()
-        .input('storeId', sql.Int, storeId)
+        .input('storeId', sql.Int, safeStoreId)
+        .input('companyId', sql.Int, isNaN(safeCompanyId) ? null : safeCompanyId) // ✅ Envoi du CompanyId
         .execute('dbo.sp_GetPurchasesByStore');
 
       return result.recordset;

@@ -341,11 +341,12 @@ class UserDAL {
     }
 
     static async createManagerAndAssign(data) {
-        const { vcLastName, vcFirstName, vcEmail, vcPhoneNumber, password, storeId, createdByUserId } = data;
+        const { vcLastName, vcFirstName, vcEmail, vcPhoneNumber, password, storeId, companyId, createdByUserId } = data;
 
         if (!vcLastName?.trim()) throw new Error('Le nom est obligatoire.');
         if (!password) throw new Error('Le mot de passe est obligatoire.');
         if (!storeId) throw new Error('storeId est obligatoire.');
+        if (!companyId || companyId <= 0) throw new Error('companyId est obligatoire et doit être positif.');
         if (!createdByUserId) throw new Error('createdByUserId est obligatoire.');
 
         const vcPasswordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
@@ -354,6 +355,7 @@ class UserDAL {
         try {
             const result = await pool.request()
                 .input('createdByUserId', sql.Int,          createdByUserId)
+                .input('companyId',       sql.Int,          companyId)
                 .input('storeId',         sql.Int,          storeId)
                 .input('vcLastName',      sql.VarChar(50),  UserDAL._cleanString(vcLastName))
                 .input('vcPasswordHash',  sql.VarChar(255), vcPasswordHash)

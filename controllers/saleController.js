@@ -12,20 +12,36 @@ const asyncHandler = require('../middleware/asyncHandler');
  * ✅ Récupère l'historique des ventes.
  */
 exports.getHistorique = asyncHandler(async (req, res) => {
-  const storeId = Number(req.query.boutique || req.query.storeId || req.user.storeId);
-  const limit = req.query.limit ? parseInt(req.query.limit) : 100;
+  // ✅ On récupère le companyId
+  const companyId = req.user.companyId ? Number(req.user.companyId) : null;
+  
+  // ✅ On vérifie si l'utilisateur est Admin
+  const isAdmin = req.user.roleCode === 'ADMIN' || req.user.roleCode === 'SUPER_ADMIN';
+  
+  // ✅ Si c'est un Admin, on force storeId à null pour voir TOUTES les boutiques
+  let storeId = isAdmin ? null : (req.query.boutique || req.query.storeId || req.user.storeId);
+  
+  // ✅ Si storeId est 0 ou invalide, on le met à null
+  storeId = (storeId && Number(storeId) > 0) ? Number(storeId) : null; 
+  
+  const limit = req.query.limit ? parseInt(req.query.limit) : 1000;
 
-  if (!storeId) {
-    return res.status(400).json({ success: false, message: "storeId est obligatoire." });
+  if (!companyId) {
+    return res.status(403).json({ success: false, message: "Erreur : Impossible d'identifier votre entreprise." });
   }
 
-  const result = await saleService.getHistorique({ storeId, limit });
+  if (!storeId && !companyId) {
+    return res.status(400).json({ success: false, message: "storeId ou companyId est obligatoire." });
+  }
+
+  // On passe bien storeId (qui sera null pour l'admin) et companyId
+  const result = await saleService.getHistorique({ storeId, companyId, limit });
   res.status(200).json({ success: true, data: result });
 });
 
 /**
  * Crée une vente via le service métier.
- * ✅ CORRECTION : Traduction des modes de paiement React vers SQL.
+ * ✅ Traduction des modes de paiement React vers SQL.
  */
 exports.create = asyncHandler(async (req, res) => {
   // 1. Extraction des données
@@ -52,7 +68,6 @@ exports.create = asyncHandler(async (req, res) => {
   // 3. Formatage des paiements
   let payments = req.body.payments || [];
   
-  // ✅ CORRECTION ICI : Si React n'envoie pas "payments", on le crée avec la bonne traduction SQL
   if (payments.length === 0 && req.body.montantPaye !== undefined) {
     
     // Traduction du mode de paiement React vers le code exact de la table tblRefPaymentMethod
@@ -68,7 +83,7 @@ exports.create = asyncHandler(async (req, res) => {
       paymentMethodCode: codeSQL, 
       paymentStatusCode: 'SUCCESS',
       mAmount: parseFloat(req.body.montantPaye),
-      vcTransactionId: req.body.transactionRef || null // ✅ AJOUT : On enregistre la référence de transaction
+      vcTransactionId: req.body.transactionRef || null 
     }];
   }
 
@@ -91,8 +106,15 @@ exports.create = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: sale });
 });
 
+// ✅ On passe companyId au DAL pour la sécurité
 exports.getByStore = asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await SaleDAL.getByStore(req.params.storeId) });
+  const companyId = req.user.companyId ? Number(req.user.companyId) : null;
+  if (!companyId) {
+    return res.status(403).json({ success: false, message: "Erreur : Impossible d'identifier votre entreprise." });
+  }
+  
+  const result = await SaleDAL.getByStore(Number(req.params.storeId), companyId);
+  res.json({ success: true, data: result });
 });
 
 exports.getBySession = asyncHandler(async (req, res) => {

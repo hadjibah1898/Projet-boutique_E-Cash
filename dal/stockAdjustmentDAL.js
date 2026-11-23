@@ -178,16 +178,19 @@ class StockAdjustmentDAL {
    * Ajustements d'une boutique via dbo.sp_GetStockAdjustmentsByStore
    * (filtre de statut facultatif transmis en paramètre).
    * @param {number} storeId
+   * @param {number} companyId - ✅ NOUVEAU : ID de l'entreprise pour isolation
    * @param {Object} [options]
    * @param {string|null} [options.statusCode]
    * @param {number} [options.limit=100]
    * @returns {Promise<Array>}
    */
-  static async getByStore(storeId, { statusCode = null, limit = 100 } = {}) {
+  static async getByStore(storeId, companyId, { statusCode = null, limit = 100 } = {}) {
     try {
       const pool = await poolPromise;
       const result = await pool.request()
-        .input('storeId', sql.Int, storeId)
+        // ✅ SÉCURITÉ : Ajout de "|| null" pour éviter le crash si la valeur est undefined
+        .input('storeId', sql.Int, storeId || null) 
+        .input('companyId', sql.Int, companyId || null) 
         .input('statusCode', sql.VarChar(20), statusCode)
         .input('limit', sql.Int, limit)
         .execute('dbo.sp_GetStockAdjustmentsByStore');

@@ -222,15 +222,27 @@ GO
   Sécurité : Ouvert au SuperAdmin OU à l'Admin de l'entreprise à laquelle appartient la boutique.
 ------------------------------------------------------------------------------*/
 CREATE OR ALTER PROCEDURE dbo.usp_CreateManagerByAdmin
-    @createdByUserId int, @storeId int, @vcLastName varchar(50), @vcPasswordHash varchar(255),
-    @vcFirstName varchar(50) = NULL, @genderId int = NULL, @vcEmail varchar(100) = NULL,
-    @vcPhoneNumber varchar(20) = NULL, @vcAddress varchar(150) = NULL, @vcPhotoUrl varchar(255) = NULL
+    @createdByUserId int,
+    @companyId       int,
+    @storeId         int,
+    @vcLastName      varchar(50),
+    @vcPasswordHash  varchar(255),
+    @vcFirstName     varchar(50) = NULL,
+    @genderId        int = NULL,
+    @vcEmail         varchar(100) = NULL,
+    @vcPhoneNumber   varchar(20) = NULL,
+    @vcAddress       varchar(150) = NULL,
+    @vcPhotoUrl      varchar(255) = NULL
 AS
 BEGIN
     SET NOCOUNT ON; SET XACT_ABORT ON;
     BEGIN TRY
-        DECLARE @companyId int = (SELECT companyId FROM dbo.tblStore WHERE storeId = @storeId AND btEnabled = 1);
-        IF @companyId IS NULL THROW 51274, 'Boutique introuvable ou inactive.', 1;
+        -- Validation de l'entreprise
+        IF @companyId IS NULL OR @companyId <= 0
+            THROW 51231, 'companyId est obligatoire et doit être positif.', 1;
+
+        IF NOT EXISTS (SELECT 1 FROM dbo.tblStore WHERE storeId = @storeId AND companyId = @companyId AND btEnabled = 1)
+            THROW 51274, 'Boutique introuvable ou inactive.', 1;
 
         -- Contrôle de sécurité (SuperAdmin OU Admin de cette entreprise)
         DECLARE @isSA bit = 0, @isAdmin bit = 0;

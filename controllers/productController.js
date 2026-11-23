@@ -8,13 +8,39 @@ const StockAdjustmentDAL = require('../dal/stockAdjustmentDAL');
 const productService = require('../services/productService');
 const asyncHandler = require('../middleware/asyncHandler');
 
+// Fonction utilitaire privée pour formater un produit (évite la duplication de code)
+const formatProduct = (item) => ({
+  _id: item.productId || item.ProductId,
+  nom: item.vcProductName || item.VcProductName || "Sans nom",
+  code: item.vcProductCode || item.VcProductCode,
+  codeBarre: item.vcBarcode || item.VcBarcode,
+  prixVente: item.prixVente || item.mCurrentSalePrice || item.MCurrentSalePrice || 0,
+  prixAchat: item.prixAchat || item.mPurchasePrice || item.mUnitPurchasePrice || 0,
+  quantite: item.quantiteDisponible || item.dcAvailableQuantity || item.DcAvailableQuantity || 0,
+  seuilAlerte: item.seuilAlerte || item.alertThreshold || item.AlertThreshold || 10,
+  image: item.vcImageUrl || item.VcImageUrl || null,
+  categorie: item.categorie || item.vcCategoryName || item.VcCategoryName || 'Divers',
+  boutique: (item.boutiqueId || item.BoutiqueId) ? { _id: item.boutiqueId || item.BoutiqueId, nom: item.storeName || item.StoreName || "Boutique" } : null,
+  fournisseur: (item.fournisseurNom || item.FournisseurNom) ? { nom: item.fournisseurNom || item.FournisseurNom } : null, // ✅ Uniformisé
+  promo: item.mPromoRate || 0,
+  promoActive: item.btPromoActive === 1 || item.btPromoActive === true,
+  remise: item.mExceptionDiscount || 0,
+  dateDebutPromo: item.dtPromoStart || null,
+  dateFinPromo: item.dtPromoEnd || null,
+  datePeremption: item.datePeremption || null,
+});
+
 // ==========================================
 // 1. ARTICLES & APPROVISIONNEMENTS
 // ==========================================
 
 exports.getAllArticles = asyncHandler(async (req, res) => {
-  // 🟢 Si l'Admin choisit "Toutes les boutiques", on ne filtre pas (storeId = null)
   const isAdmin = req.user && ['ADMIN', 'SUPER_ADMIN'].includes(req.user.roleCode);
+  const companyId = req.user.companyId ? Number(req.user.companyId) : null;
+  
+  if (!companyId) {
+      return res.status(403).json({ success: false, message: "Erreur : Impossible d'identifier votre entreprise." });
+  }
   
   let storeId = req.query.boutique;
   
@@ -26,28 +52,12 @@ exports.getAllArticles = asyncHandler(async (req, res) => {
     return res.json({ success: true, data: [], totalPages: 0, totalCount: 0 });
   }
 
-  const catalog = await ProductDAL.getArticlesWithDetails(storeId ? parseInt(storeId, 10) : null);
+  const catalog = await ProductDAL.getArticlesWithDetails(
+    storeId ? parseInt(storeId, 10) : null,
+    companyId
+  );
 
-  const formatted = catalog.map(item => ({
-    _id: item.productId || item.ProductId,
-    nom: item.vcProductName || item.VcProductName || "Sans nom",
-    code: item.vcProductCode || item.VcProductCode,
-    codeBarre: item.vcBarcode || item.VcBarcode,
-    prixVente: item.mCurrentSalePrice || item.MCurrentSalePrice || 0,
-    prixAchat: item.mUnitPurchasePrice || item.MUnitPurchasePrice || 0,
-    quantite: item.dcAvailableQuantity || item.DcAvailableQuantity || 0,
-    seuilAlerte: item.alertThreshold || item.AlertThreshold || 10,
-    image: item.vcImageUrl || item.VcImageUrl || null,
-    categorie: item.vcCategoryName || item.VcCategoryName || 'Divers',
-    boutique: (item.boutiqueId || item.BoutiqueId) ? { _id: item.boutiqueId || item.BoutiqueId, nom: item.storeName || item.StoreName || "Boutique" } : null,
-    fournisseur: (item.fournisseurNom || item.FournisseurNom) ? { nom: item.fournisseurNom || item.FournisseurNom } : null,
-    promo: item.mPromoRate || 0,
-    promoActive: item.btPromoActive === 1 || item.btPromoActive === true,
-    remise: item.mExceptionDiscount || 0,
-    dateDebutPromo: item.dtPromoStart || null,
-    dateFinPromo: item.dtPromoEnd || null,
-    datePeremption: item.datePeremption || null, 
-  }));
+  const formatted = catalog.map(formatProduct);
 
   let filtered = formatted;
   if (req.query.search) {
@@ -60,7 +70,6 @@ exports.getAllArticles = asyncHandler(async (req, res) => {
   }
 
   const page = parseInt(req.query.page) || 1;
-  // 🟢 CORRECTION ICI : Si limit=0, on renvoie tout sans paginer
   const limit = req.query.limit !== undefined ? parseInt(req.query.limit, 10) : 15; 
   const start = (page - 1) * limit;
   
@@ -95,7 +104,11 @@ exports.restockArticle = asyncHandler(async (req, res) => {
 });
 
 exports.approvisionner = asyncHandler(async (req, res) => {
-  const utilisateurSecurise = req.user || { userId: 14, companyId: 1, storeId: 10 };
+  const utilisateurSecurise = req.user; 
+  if (!utilisateurSecurise) {
+      return res.status(401).json({ success: false, message: "Utilisateur non authentifié." });
+  }
+
   const payload = { ...req.body, user: utilisateurSecurise };
   
   const result = await productService.enregistrerApprovisionnement(payload);
@@ -110,36 +123,43 @@ exports.getAdjustments = asyncHandler(async (req, res) => {
   const isAdmin = req.user && ['ADMIN', 'SUPER_ADMIN'].includes(req.user.roleCode);
   let storeId = req.query.boutique || (isAdmin ? null : req.user.storeId);
 
+  const companyId = req.user.companyId ? Number(req.user.companyId) : null;
+  if (!companyId || isNaN(companyId)) {
+      return res.status(403).json({ success: false, message: "Erreur : Impossible d'identifier votre entreprise." });
+  }
+
   if (!storeId && !isAdmin) {
     return res.status(400).json({ success: false, message: 'storeId est obligatoire.' });
   }
 
-  const adjustments = await StockAdjustmentDAL.getByStore(storeId ? parseInt(storeId, 10) : null, {
-    statusCode: req.query.status || null
-  });
+  const adjustments = await StockAdjustmentDAL.getByStore(
+    storeId ? parseInt(storeId, 10) : null, 
+    companyId, 
+    { statusCode: req.query.status || null }
+  );
 
   const formatted = adjustments.map(adj => {
-    const qte = adj.dcAdjustmentQuantity || adj.DcAdjustmentQuantity || adj.quantite || 0;
-    const qteAbsolue = Math.abs(qte);
+    const qte = adj.Quantite ?? adj.dcAdjustmentQuantity ?? adj.DcAdjustmentQuantity ?? adj.quantite ?? 0;
+    const qteAbsolue = Math.abs(Number(qte));
 
-    let statutLisible = adj.statusCode || adj.Statut || 'PENDING';
-    if (statutLisible === 'PENDING') statutLisible = 'En Attente';
-    if (statutLisible === 'APPROVED') statutLisible = 'Validé';
-    if (statutLisible === 'REJECTED') statutLisible = 'Rejeté';
+    let statutLisible = adj.Statut || adj.statusCode || 'PENDING';
+    if (statutLisible === 'PENDING' || statutLisible === 'En attente') statutLisible = 'En Attente';
+    if (statutLisible === 'APPROVED' || statutLisible === 'Validé') statutLisible = 'Validé';
+    if (statutLisible === 'REJECTED' || statutLisible === 'Rejeté') statutLisible = 'Rejeté';
 
     return {
       _id: adj.stockAdjustmentId || adj.StockAdjustmentId || adj._id,
       date: adj.dtCreatedAt || new Date().toISOString(),
       createdAt: adj.dtCreatedAt || new Date().toISOString(), 
-      produitNom: adj.vcProductName || 'Produit Inconnu',
-      article: adj.vcProductName || 'Produit Inconnu',
-      boutiqueNom: adj.vcStoreName || 'Boutique Inconnue',
-      pointDeVente: adj.vcStoreName || 'Boutique Inconnue',
-      motif: adj.vcAdjustmentReason || 'Autre',
-      justification: adj.vcJustification || 'Aucune note',
+      produitNom: adj.Article || adj.vcProductName || 'Produit Inconnu',
+      article: adj.Article || adj.vcProductName || 'Produit Inconnu',
+      boutiqueNom: adj.PointDeVente || adj.vcStoreName || 'Boutique Inconnue',
+      pointDeVente: adj.PointDeVente || adj.vcStoreName || 'Boutique Inconnue',
+      motif: adj.Motif || adj.vcAdjustmentReason || 'Autre',
+      justification: adj.Note || adj.vcJustification || 'Aucune note',
       quantite: qteAbsolue,
-      imageJustificatif: adj.vcProofImageUrl || null,
-      preuve: adj.vcProofImageUrl || null,
+      imageJustificatif: adj.Preuve || adj.vcProofImageUrl || null,
+      preuve: adj.Preuve || adj.vcProofImageUrl || null,
       statut: statutLisible,
       statutCode: adj.statusCode || 'PENDING'
     };
@@ -151,8 +171,17 @@ exports.getAdjustments = asyncHandler(async (req, res) => {
 exports.createAdjustment = asyncHandler(async (req, res) => {
   const { article, quantite, raison, justification, imageJustificatif } = req.body;
   
-  const storeId = req.user.storeId || 10; 
+  const storeId = req.user.storeId; 
   const userId = req.user.userId;
+  const companyId = req.user.companyId ? Number(req.user.companyId) : null;
+
+  if (!storeId) {
+      return res.status(400).json({ success: false, message: "Aucune boutique associée à votre compte." });
+  }
+
+  if (!companyId) {
+      return res.status(403).json({ success: false, message: "Erreur : Impossible d'identifier votre entreprise." });
+  }
 
   let safeJustification = justification;
   if (!safeJustification || typeof safeJustification !== 'string' || safeJustification.trim() === '') {
@@ -170,7 +199,7 @@ exports.createAdjustment = asyncHandler(async (req, res) => {
   
   const safeReasonCode = reasonMap[raison] || 'OTHER';
 
-  const catalog = await ProductDAL.getArticlesWithDetails(Number(storeId));
+  const catalog = await ProductDAL.getArticlesWithDetails(Number(storeId), companyId);
   const produitInfo = catalog.find(p => Number(p.productId || p.ProductId) === Number(article));
   const stockActuel = produitInfo ? Number(produitInfo.dcAvailableQuantity || produitInfo.DcAvailableQuantity || 0) : 0;
 
@@ -350,15 +379,82 @@ exports.getStoreProducts = asyncHandler(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+// ✅ CORRECTION : On applique le même formatage que getAllArticles
 exports.getStoreStock = asyncHandler(async (req, res) => {
   const storeId = parseInt(req.params.storeId, 10);
-  const catalog = await ProductDAL.getSaleCatalog(storeId);
-  res.json({ success: true, data: catalog });
+  const companyId = req.user.companyId ? Number(req.user.companyId) : null;
+
+  if (!companyId) {
+      return res.status(403).json({ success: false, message: "Erreur : Impossible d'identifier votre entreprise." });
+  }
+
+  const catalog = await ProductDAL.getSaleCatalog(storeId, companyId);
+  
+  // ✅ On formate pour que le Frontend reçoive "fournisseur: { nom: ... }"
+  const formatted = catalog.map(formatProduct);
+
+  res.json({ success: true, data: formatted });
 });
 
+// ✅ CORRECTION : On applique le même formatage que getAllArticles
 exports.getLowStock = asyncHandler(async (req, res) => {
   const storeId = parseInt(req.params.storeId, 10);
-  const catalog = await ProductDAL.getSaleCatalog(storeId);
-  const lowStock = catalog.filter(item => item.dcAvailableQuantity <= (item.alertThreshold || 10));
+  const companyId = req.user.companyId ? Number(req.user.companyId) : null;
+
+  if (!companyId) {
+      return res.status(403).json({ success: false, message: "Erreur : Impossible d'identifier votre entreprise." });
+  }
+
+  const catalog = await ProductDAL.getSaleCatalog(storeId, companyId);
+  
+  // ✅ On formate AVANT de filtrer
+  const formatted = catalog.map(formatProduct);
+  
+  // ✅ On filtre sur les noms formatés
+  const lowStock = formatted.filter(item => item.quantite <= (item.seuilAlerte || 10));
+  
   res.json({ success: true, data: lowStock });
+});
+
+// ✅ CORRECTION : Récupérer les lots d'un produit dans une boutique
+exports.getProductLots = asyncHandler(async (req, res) => {
+  const { productId } = req.params;
+  const { storeId } = req.query;
+  const companyId = req.user.companyId ? Number(req.user.companyId) : null;
+
+  if (!companyId) {
+    return res.status(403).json({ success: false, message: "Erreur : Impossible d'identifier votre entreprise." });
+  }
+
+  if (!productId) {
+    return res.status(400).json({ success: false, message: "ID produit obligatoire." });
+  }
+
+  const lots = await ProductDAL.getProductLots(productId, parseInt(storeId, 10), companyId);
+  res.json({ success: true, data: lots });
+});
+
+// ✅ CORRECTION : Modifier la date de péremption d'un lot précis
+exports.updateLotExpiration = asyncHandler(async (req, res) => {
+  const { productId, stockLotId } = req.params;
+  const { dtExpirationAt } = req.body;
+  const companyId = req.user.companyId ? Number(req.user.companyId) : null;
+
+  if (!companyId) {
+    return res.status(403).json({ success: false, message: "Erreur : Impossible d'identifier votre entreprise." });
+  }
+
+  if (!dtExpirationAt) {
+    return res.status(400).json({ success: false, message: "Date de péremption obligatoire." });
+  }
+
+  await ProductDAL.updateLotExpiration({
+    productId: parseInt(productId, 10),
+    stockLotId: parseInt(stockLotId, 10),
+    storeId: req.user.storeId || null,
+    companyId: companyId,
+    dtExpirationAt
+  });
+
+  res.json({ success: true, message: "Date de péremption mise à jour avec succès." });
 });

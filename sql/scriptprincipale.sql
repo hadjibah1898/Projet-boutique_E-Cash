@@ -1932,3 +1932,13 @@ VALUES
 );
 GO
 
+COLLONE AJOUTER 
+USE GestionsBoutiques;
+GO
+
+-- 1. Ajouter la colonne si elle n'existe pas
+IF COL_LENGTH('dbo.tblCashReport', 'managerSessionId') IS NULL
+BEGIN
+    ALTER TABLE dbo.tblCashReport ADD managerSessionId INT NULL;
+END
+GO

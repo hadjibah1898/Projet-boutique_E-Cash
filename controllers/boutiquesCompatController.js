@@ -182,10 +182,17 @@ exports.update = asyncHandler(async (req, res) => {
 
   delete data.vcStoreCode;
   delete data.storeTypeCode;
-  delete data.companyId;
+
+  // Récupérer companyId via resolveCompanyId (retourne null pour SUPER_ADMIN)
+  const companyId = resolveCompanyId(req);
+
+  // Pour SUPER_ADMIN, prendre le companyId depuis le store trouvé
+  if (!companyId && store) {
+    companyId = store.companyId;
+  }
 
   try {
-    const updated = await StoreDAL.update(req.params.id, data);
+    const updated = await StoreDAL.update(req.params.id, data, companyId);
     if (!updated) return res.status(404).json({ success: false, message: 'Boutique introuvable.' });
 
     // ✅ SYNCHRONISATION VIA DAL

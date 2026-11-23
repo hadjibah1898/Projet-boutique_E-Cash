@@ -175,15 +175,30 @@ class StockTransferDAL {
    * Transferts impliquant une boutique (source ou destination) via
    * dbo.sp_GetStockTransfersByStore (vw_StockTransferDetails).
    * @param {number} storeId
+   * @param {number} companyId - ✅ NOUVEAU : ID de l'entreprise pour isolation
    * @param {Object} [options]
    * @param {number} [options.limit=100]
    * @returns {Promise<Array>}
    */
-  static async getByStore(storeId, { limit = 100 } = {}) {
+  static async getByStore(storeId, companyId, options = {}) {
     try {
       const pool = await poolPromise;
+      
+      // 🛡️ PROTECTION ABSOLUE : Si le contrôleur envoie un objet par erreur, on décale les paramètres
+      if (typeof companyId === 'object' && companyId !== null) {
+          options = companyId;
+          companyId = null;
+      }
+
+      // 🛡️ On force la conversion en entier pour SQL Server
+      const safeCompanyId = companyId ? parseInt(companyId, 10) : null;
+      const safeStoreId = storeId ? parseInt(storeId, 10) : null;
+      
+      const { limit = 100 } = options;
+
       const result = await pool.request()
-        .input('storeId', sql.Int, storeId)
+        .input('storeId', sql.Int, safeStoreId)
+        .input('companyId', sql.Int, isNaN(safeCompanyId) ? null : safeCompanyId)
         .input('limit', sql.Int, limit)
         .execute('dbo.sp_GetStockTransfersByStore');
 

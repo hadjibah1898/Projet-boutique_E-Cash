@@ -28,8 +28,10 @@ const { logAction } = require('./auditLogService');
  * (sécurité multi-tenant : on ne vend que le catalogue de SA boutique).
  * @private
  */
-async function _prepareDetails(storeId, details, statusCode) {
-  const catalog = await ProductDAL.getSaleCatalog(storeId);
+async function _prepareDetails(storeId, companyId, details, statusCode) {
+  // ✅ SÉCURITÉ : On passe le companyId au DAL
+  // ✅ CORRECTION : Ajout de || [] pour éviter le crash "Cannot read properties of undefined (reading 'map')"
+  const catalog = (await ProductDAL.getSaleCatalog(storeId, companyId)) || [];
   const catalogMap = new Map(catalog.map((row) => [Number(row.productId), row]));
 
   const preparedDetails = [];
@@ -112,15 +114,18 @@ async function createSale(params) {
     if (!cashSessionId) throw new Error('Aucune session de caisse ouverte pour cette vente.');
     if (!details.length) throw new Error('Le panier est vide : aucun article à vendre.');
 
-    // 1. Boutique -> entreprise
-    const store = await StoreDAL.findById(storeId);
-    if (!store) throw new Error('Boutique introuvable.');
-    if (!store.btEnabled) throw new Error('Boutique désactivée.');
-    const companyId = store.companyId;
+    // ✅ SÉCURITÉ : On vérifie que l'utilisateur a une entreprise
+    const companyId = user.companyId ? Number(user.companyId) : null;
+    if (!companyId) throw new Error("Erreur : Impossible d'identifier votre entreprise.");
 
-    // 2. Lignes validées contre le catalogue de la boutique
+    // 1. Boutique -> entreprise (sécurisé)
+    const store = await StoreDAL.findById(storeId, companyId);
+    if (!store) throw new Error('Boutique introuvable ou accès refusé.');
+    if (!store.btEnabled) throw new Error('Boutique désactivée.');
+
+    // 2. Lignes validées contre le catalogue de la boutique (sécurisé)
     const { preparedDetails, stockWarnings, mGrossAmount, mDiscountAmount } =
-      await _prepareDetails(storeId, details, statusCode);
+      await _prepareDetails(storeId, companyId, details, statusCode);
 
     // 3. Contrôles paiement / crédit (CK_Sale_Amounts)
     const mNetAmount = mGrossAmount - mDiscountAmount;
@@ -253,11 +258,17 @@ async function annulerVentesBrouillon(cashSessionId, userId) {
  * Utilisée par l'écran "Historique des ventes" et le Dashboard.
  */
 async function getHistorique(params) {
-  const { storeId, limit = 100 } = params;
-  if (!storeId) throw new Error('storeId est obligatoire pour lister les ventes.');
+  // ✅ SÉCURITÉ : On accepte soit le storeId soit le companyId
+  const { storeId, companyId, limit = 100 } = params;
+  
+  // ✅ CORRECTION ICI : Si l'admin n'a pas de boutique (storeId null), on l'autorise
+  // tant qu'il a un companyId pour filtrer.
+  if (!storeId && !companyId) {
+    throw new Error('storeId ou companyId est obligatoire pour lister les ventes.');
+  }
 
   // Appel au DAL qui exécute sp_GetSalesByStore
-  const sales = await SaleDAL.getByStore(storeId, { limit });
+  const sales = await SaleDAL.getByStore(storeId, companyId, { limit });
 
   return {
     ventes: sales,

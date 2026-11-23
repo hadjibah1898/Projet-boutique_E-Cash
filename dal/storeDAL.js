@@ -1,12 +1,20 @@
+
 /**
  * @file storeDAL.js
- * @description DAL boutique — ACCÈS EXCLUSIF via les objets du module
- * utils/store-module.sql. INTERDIT : tout SQL inline sur dbo.tblStore
- * (aucune requête dynamique, les mises à jour partielles sont gérées par les
- * indicateurs @set* de sp_UpdateStore).
+ * @description DAL boutique — ACCÈS EXCLUSIF via les procédures stockées
+ * du module utils/store-module.sql.
+ * INTERDIT : SQL inline sur dbo.tblStore.
+ *
  * Vues : vw_StoreDetails.
- * Procédures : sp_CreateStore, sp_GetStoresByCompany, sp_GetStoreById,
- *   sp_UpdateStore, sp_SoftDeleteStore.
+ * Procédures :
+ *   sp_CreateStore,
+ *   sp_GetStoresByCompany,
+ *   sp_GetStoreById,
+ *   sp_UpdateStore.
+ *
+ * La désactivation et la réactivation utilisent exclusivement
+ * sp_UpdateStore et ne suppriment aucune donnée.
+ *
  * @module DAL/Store
  */
 
@@ -14,10 +22,9 @@ const { sql, poolPromise } = require('../config/db');
 const RefDAL = require('./refDAL');
 
 class StoreDAL {
+
   /**
-   * Helper privé pour formater les erreurs SQL métier (plage 50000 - 54000,
-   * couvre les codes 51700-51705 du module boutiques).
-   * @private
+   * Formate les erreurs SQL métier.
    */
   static _mapSqlError(err) {
     if (err && err.number >= 50000 && err.number < 54000) {
@@ -25,19 +32,12 @@ class StoreDAL {
       cleanErr.sqlNumber = err.number;
       return cleanErr;
     }
+
     return err;
   }
 
   /**
-   * Crée une boutique ou un entrepôt via dbo.sp_CreateStore
-   * (unicité UQ_Store_Company_StoreCode gérée par la contrainte).
-   * @param {Object} data
-   * @param {number} data.companyId
-   * @param {string} [data.storeTypeCode='STORE']
-   * @param {string} data.vcStoreCode
-   * @param {string} data.vcStoreName
-   * @param {number} data.createdByUserId
-   * @returns {Promise<Object>} Ligne créée (storeId, codes, coordonnées, btEnabled, dtCreatedAt).
+   * Créer une boutique.
    */
   static async create(data) {
     const {
@@ -53,21 +53,36 @@ class StoreDAL {
       createdByUserId
     } = data;
 
-    if (!companyId) throw new Error('companyId est obligatoire.');
-    if (!vcStoreCode?.trim()) throw new Error('Le code boutique (vcStoreCode) est obligatoire.');
-    if (!vcStoreName?.trim()) throw new Error('Le nom boutique (vcStoreName) est obligatoire.');
-    if (!createdByUserId) throw new Error('createdByUserId est obligatoire.');
+    if (!companyId) {
+      throw new Error('companyId est obligatoire.');
+    }
+
+    if (!vcStoreCode?.trim()) {
+      throw new Error('Le code boutique (vcStoreCode) est obligatoire.');
+    }
+
+    if (!vcStoreName?.trim()) {
+      throw new Error('Le nom boutique (vcStoreName) est obligatoire.');
+    }
+
+    if (!createdByUserId) {
+      throw new Error('createdByUserId est obligatoire.');
+    }
 
     const storeType = await RefDAL.getByCode('storeType', storeTypeCode);
-    if (!storeType) throw new Error(`Type de boutique inconnu : ${storeTypeCode}`);
+
+    if (!storeType) {
+      throw new Error(`Type de boutique inconnu : ${storeTypeCode}`);
+    }
 
     const storeTypeId = storeType.storeTypeId || storeType.refId;
 
     try {
       const pool = await poolPromise;
+
       const result = await pool.request()
-        .input('companyId', sql.Int, companyId)
-        .input('storeTypeId', sql.Int, storeTypeId)
+        .input('companyId', sql.Int, Number(companyId))
+        .input('storeTypeId', sql.Int, Number(storeTypeId))
         .input('vcStoreCode', sql.VarChar(20), vcStoreCode.trim())
         .input('vcStoreName', sql.VarChar(50), vcStoreName.trim())
         .input('vcAddress', sql.VarChar(150), vcAddress)
@@ -75,135 +90,224 @@ class StoreDAL {
         .input('vcPhoneNumber', sql.VarChar(20), vcPhoneNumber)
         .input('dcLatitude', sql.Decimal(9, 6), dcLatitude)
         .input('dcLongitude', sql.Decimal(9, 6), dcLongitude)
-        .input('createdByUserId', sql.Int, createdByUserId)
+        .input('createdByUserId', sql.Int, Number(createdByUserId))
         .execute('dbo.sp_CreateStore');
 
       return result.recordset[0];
+
     } catch (err) {
       throw StoreDAL._mapSqlError(err);
     }
   }
 
   /**
-   * Boutiques d'une entreprise via dbo.sp_GetStoresByCompany
-   * (filtre actif optionnel transmis en paramètre, plus de requête dynamique).
-   * @param {number} companyId
-   * @param {boolean} [onlyActive=true] - Filtre sur les magasins actifs uniquement.
-   * @returns {Promise<Array>}
+   * Récupérer les boutiques d'une entreprise.
    */
-  static async getByCompanyId(companyId, onlyActive = true) {
-    try {
-      const pool = await poolPromise;
-      const result = await pool.request()
-        .input('companyId', sql.Int, companyId)
-        .input('onlyActive', sql.Bit, onlyActive ? 1 : 0)
-        .execute('dbo.sp_GetStoresByCompany');
+  static async getByCompanyId(companyId, onlyActive = false) {
+  try {
+    const pool = await poolPromise;
 
-      return result.recordset;
-    } catch (err) {
-      throw StoreDAL._mapSqlError(err);
-    }
+    const result = await pool.request()
+      .input('companyId', sql.Int, Number(companyId))
+      .input('onlyActive', sql.Bit, onlyActive ? 1 : 0)
+      .execute('dbo.sp_GetStoresByCompany');
+
+    return result.recordset;
+
+  } catch (err) {
+    throw StoreDAL._mapSqlError(err);
   }
+}
 
   /**
-   * Toutes les boutiques actives (ou d'une entreprise) via
-   * dbo.usp_ListStores — utilisé par la route de compatibilité /api/boutiques.
-   * @param {number|null} [companyId=null] - Filtre optionnel par entreprise.
-   * @returns {Promise<Array>}
+   * Lister les boutiques via la procédure de compatibilité.
    */
-  static async listAll(companyId = null) {
-    try {
-      const pool = await poolPromise;
-      const result = await pool.request()
-        .input('companyId', sql.Int, companyId)
-        .execute('dbo.usp_ListStores');
+ 
+/**
+ * Lister les boutiques.
+ * Par défaut : boutiques actives et désactivées.
+ */
+static async listAll(companyId = null, onlyActive = false) {
+  try {
+    const pool = await poolPromise;
 
-      return result.recordset;
-    } catch (err) {
-      throw StoreDAL._mapSqlError(err);
-    }
+    const result = await pool.request()
+      .input(
+        'companyId',
+        sql.Int,
+        companyId ? Number(companyId) : null
+      )
+      .input(
+        'onlyActive',
+        sql.Bit,
+        onlyActive ? 1 : 0
+      )
+      .execute('dbo.usp_ListStores');
+
+    return result.recordset || [];
+
+  } catch (err) {
+    throw StoreDAL._mapSqlError(err);
   }
+}
+
 
   /**
-   * Détails d'une boutique via dbo.sp_GetStoreById (vw_StoreDetails : sur-ensemble
-   * ajoutant storeTypeCode, vcCompanyCode/Name, createdByUserId).
-   * @param {number} storeId
-   * @returns {Promise<Object|null>}
+   * Récupérer une boutique par son identifiant et son entreprise.
    */
-  static async findById(storeId) {
+  static async findById(storeId, companyId) {
     try {
       const pool = await poolPromise;
+
       const result = await pool.request()
-        .input('storeId', sql.Int, storeId)
+        .input('storeId', sql.Int, Number(storeId))
+        .input(
+          'companyId',
+          sql.Int,
+          companyId ? Number(companyId) : null
+        )
         .execute('dbo.sp_GetStoreById');
 
       return result.recordset[0] || null;
+
     } catch (err) {
       throw StoreDAL._mapSqlError(err);
     }
   }
 
   /**
-   * Mise à jour partielle via dbo.sp_UpdateStore : chaque champ présent dans `data`
-   * active son indicateur @set* (permet la mise à NULL explicite et évite d'écraser
-   * les données absentes).
-   * @param {number} storeId
-   * @param {Object} data - Champs à mettre à jour (vcStoreName, vcAddress, vcCity,
-   *   vcPhoneNumber, dcLatitude, dcLongitude, btEnabled).
-   * @returns {Promise<Object|null>} { storeId, vcStoreName, btEnabled, dtLastUpdated }
+   * Mise à jour partielle d'une boutique.
+   *
+   * Les indicateurs @set* permettent de modifier uniquement
+   * les champs transmis.
    */
-  static async update(storeId, data) {
+  static async update(storeId, data, companyId) {
+    if (!Number.isInteger(Number(storeId)) || Number(storeId) <= 0) {
+      throw new Error('storeId invalide.');
+    }
+
+    if (!Number.isInteger(Number(companyId)) || Number(companyId) <= 0) {
+      throw new Error('companyId est obligatoire et doit être positif.');
+    }
+
     const fieldMappings = [
-      { key: 'vcStoreName', type: sql.VarChar(50), flag: 'setVcStoreName' },
-      { key: 'vcAddress', type: sql.VarChar(150), flag: 'setVcAddress' },
-      { key: 'vcCity', type: sql.VarChar(50), flag: 'setVcCity' },
-      { key: 'vcPhoneNumber', type: sql.VarChar(20), flag: 'setVcPhoneNumber' },
-      { key: 'dcLatitude', type: sql.Decimal(9, 6), flag: 'setDcLatitude' },
-      { key: 'dcLongitude', type: sql.Decimal(9, 6), flag: 'setDcLongitude' },
-      { key: 'btEnabled', type: sql.Bit, flag: 'setBtEnabled' }
+      {
+        key: 'vcStoreName',
+        type: sql.VarChar(50),
+        flag: 'setVcStoreName'
+      },
+      {
+        key: 'vcAddress',
+        type: sql.VarChar(150),
+        flag: 'setVcAddress'
+      },
+      {
+        key: 'vcCity',
+        type: sql.VarChar(50),
+        flag: 'setVcCity'
+      },
+      {
+        key: 'vcPhoneNumber',
+        type: sql.VarChar(20),
+        flag: 'setVcPhoneNumber'
+      },
+      {
+        key: 'dcLatitude',
+        type: sql.Decimal(9, 6),
+        flag: 'setDcLatitude'
+      },
+      {
+        key: 'dcLongitude',
+        type: sql.Decimal(9, 6),
+        flag: 'setDcLongitude'
+      },
+      {
+        key: 'btEnabled',
+        type: sql.Bit,
+        flag: 'setBtEnabled'
+      }
     ];
 
-    const provided = fieldMappings.filter((f) =>
-      Object.prototype.hasOwnProperty.call(data, f.key)
+    const provided = fieldMappings.filter(field =>
+      Object.prototype.hasOwnProperty.call(data, field.key)
     );
+
     if (provided.length === 0) {
-      return this.findById(storeId);
+      return this.findById(storeId, companyId);
+    }
+
+    // Validation du statut lorsqu'il est transmis.
+    if (Object.prototype.hasOwnProperty.call(data, 'btEnabled')) {
+      const status = data.btEnabled;
+
+      if (![0, 1, true, false].includes(status)) {
+        throw new Error('btEnabled doit être égal à 0 ou 1.');
+      }
+
+      data = {
+        ...data,
+        btEnabled: status === true || status === 1 ? 1 : 0
+      };
     }
 
     try {
       const pool = await poolPromise;
-      const req = pool.request().input('storeId', sql.Int, storeId);
+
+      const request = pool.request()
+        .input('storeId', sql.Int, Number(storeId))
+        .input('companyId', sql.Int, Number(companyId));
+
       for (const field of fieldMappings) {
         const isProvided = provided.includes(field);
-        req.input(field.key, field.type, isProvided ? data[field.key] : null);
-        req.input(field.flag, sql.Bit, isProvided ? 1 : 0);
+
+        request.input(
+          field.key,
+          field.type,
+          isProvided ? data[field.key] : null
+        );
+
+        request.input(
+          field.flag,
+          sql.Bit,
+          isProvided ? 1 : 0
+        );
       }
 
-      const result = await req.execute('dbo.sp_UpdateStore');
-      return result.recordset[0] || null;
+      const result = await request.execute('dbo.sp_UpdateStore');
+
+      return result.recordset?.[0] || null;
+
     } catch (err) {
       throw StoreDAL._mapSqlError(err);
     }
   }
 
   /**
-   * Désactivation logique d'une boutique active via dbo.sp_SoftDeleteStore.
-   * @param {number} storeId
-   * @returns {Promise<boolean>} true si la désactivation a eu lieu.
+   * Désactivation logique.
+   * Modifie uniquement btEnabled = 0.
+   * Aucune suppression de données.
    */
-  static async softDelete(storeId) {
-    try {
-      const pool = await poolPromise;
-      const result = await pool.request()
-        .input('storeId', sql.Int, storeId)
-        .execute('dbo.sp_SoftDeleteStore');
-
-      const row = (result.recordset || [])[0] || {};
-      return Number(row.rowsAffected || 0) > 0;
-    } catch (err) {
-      throw StoreDAL._mapSqlError(err);
-    }
+  static async deactivate(storeId, companyId) {
+    return this.update(
+      storeId,
+      { btEnabled: 0 },
+      companyId
+    );
   }
+
+  /**
+   * Réactivation logique.
+   * Modifie uniquement btEnabled = 1.
+   * Aucune suppression de données.
+   */
+  static async activate(storeId, companyId) {
+    return this.update(
+      storeId,
+      { btEnabled: 1 },
+      companyId
+    );
+  }
+
 }
 
 module.exports = StoreDAL;

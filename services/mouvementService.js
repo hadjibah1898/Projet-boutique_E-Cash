@@ -1,4 +1,5 @@
 const { StockMovementDAL } = require('../dal/stockMovementDAL');
+const StockTransferDAL = require('../dal/stockTransferDAL');
 const { poolPromise, sql } = require('../config/db');
 
 exports.listerMouvements = async (filter = {}, user = null) => {
@@ -10,8 +11,15 @@ exports.listerMouvements = async (filter = {}, user = null) => {
     }
 
     const isAdmin = user && ['ADMIN', 'SUPER_ADMIN'].includes(user.roleCode);
+    // ✅ SÉCURITÉ : On récupère l'ID de l'entreprise depuis l'utilisateur
+    const companyId = user && user.companyId ? Number(user.companyId) : null;
 
-    // 🟢 CORRECTION ICI : On ne force le storeId de l'utilisateur QUE s'il n'est pas Admin
+    // 🛡️ SÉCURITÉ : Si on n'a pas d'entreprise, on renvoie une liste vide
+    if (!companyId) {
+        return { data: [], totalCount: 0, totalPages: 1, currentPage: 1 };
+    }
+
+    // 🟢 On force le storeId de l'utilisateur QUE s'il n'est pas Admin
     if (!storeId && !isAdmin && user && user.storeId) {
         storeId = user.storeId;
     }
@@ -20,62 +28,34 @@ exports.listerMouvements = async (filter = {}, user = null) => {
     // 🟢 CAS 1 : SUIVI DES TRANSFERTS (EN TRANSIT OU HISTORIQUE)
     // =====================================================================
     if (filter.statutTransfert === 'EXPEDIE' || filter.statutTransfert === 'RECU' || filter.type === 'Transfert') {
-        const pool = await poolPromise;
         const targetStatus = filter.statutTransfert === 'EXPEDIE' ? 4 : (filter.statutTransfert === 'RECU' ? 5 : null);
         
-        let query = `
-            SELECT 
-                t.stockTransferId,
-                t.vcTransferNumber,
-                t.dtShippedAt,
-                t.dtReceivedAt,
-                t.vcCarrierName,
-                src.vcStoreName AS sourceName,
-                dest.vcStoreName AS destName,
-                u.vcFirstName + ' ' + u.vcLastName AS operateurName 
-            FROM tblStockTransfer t
-            INNER JOIN tblStore src ON src.storeId = t.sourceStoreId
-            INNER JOIN tblStore dest ON dest.storeId = t.destinationStoreId
-            LEFT JOIN tblUser u ON u.userId = t.createdByUserId 
-            WHERE 1=1
-        `;
+        const transfers = await StockTransferDAL.getByStore(storeId, companyId, { limit: 100 });
 
-        if (targetStatus) query += ` AND t.transferStatusId = ${targetStatus}`;
-        
-        if (!isAdmin && storeId) {
-            query += ` AND t.destinationStoreId = ${Number(storeId)}`;
-        } else if (filter.boutiqueDestination) {
-            query += ` AND t.destinationStoreId = ${Number(filter.boutiqueDestination)}`;
+        let filteredTransfers = transfers;
+        if (targetStatus) {
+            filteredTransfers = transfers.filter(t => t.transferStatusId === targetStatus);
         }
 
-        query += ` ORDER BY t.dtShippedAt DESC`;
+        const formattedData = await Promise.all(filteredTransfers.map(async (t) => {
+            const details = await StockTransferDAL.getDetails(t.stockTransferId);
 
-        const result = await pool.request().query(query);
-
-        const formattedData = await Promise.all(result.recordset.map(async (t) => {
-            const detailsQuery = `
-                SELECT 
-                    d.productId AS articleId,
-                    p.vcProductName AS nomArticle,
-                    d.dcShippedQuantity AS quantite,
-                    p.dcDefaultAlertThreshold AS prixAchatUnitaire
-                FROM tblStockTransferDetail d
-                INNER JOIN tblProduct p ON p.productId = d.productId
-                WHERE d.stockTransferId = ${t.stockTransferId}
-            `;
-            const detailsRes = await pool.request().query(detailsQuery);
-            
             return {
                 _id: t.stockTransferId,
-                createdAt: t.dtShippedAt || t.dtReceivedAt || new Date().toISOString(),
+                createdAt: t.dtShippedAt || t.dtReceivedAt || t.dtCreatedAt || new Date().toISOString(),
                 type: 'TRANSFER_OUT', 
                 isPending: targetStatus === 4,
-                isCancelled: false,
-                boutiqueSource: { nom: t.sourceName || 'Dépôt Principal' },
-                boutiqueDestination: { nom: t.destName || 'Boutique' },
-                operateur: { nom: t.operateurName || 'Système' },
+                isCancelled: t.IsCancelled === true || t.IsCancelled === 1,
+                boutiqueSource: { nom: t.SourceStoreName || 'Dépôt Principal' },
+                boutiqueDestination: { nom: t.DestinationStoreName || 'Boutique' },
+                operateur: { nom: 'Système' }, 
                 nomTransporteur: t.vcCarrierName || 'Non spécifié',
-                articles: detailsRes.recordset,
+                articles: (details || []).map(d => ({
+                    articleId: d.productId,
+                    nomArticle: d.vcProductName || 'Produit inconnu',
+                    quantite: d.dcShippedQuantity || 0,
+                    prixAchatUnitaire: d.mUnitPurchasePrice || 0
+                })),
                 details: `Bon de transfert #${t.vcTransferNumber}`
             };
         }));
@@ -86,26 +66,27 @@ exports.listerMouvements = async (filter = {}, user = null) => {
     // =====================================================================
     // 🟢 CAS 2 : MOUVEMENTS CLASSIQUES (Approvisionnements, Ventes, Pertes)
     // =====================================================================
-    // Si ce n'est pas un Admin et qu'il n'a pas de storeId, on bloque
     if (!storeId && !isAdmin) {
         throw new Error("Une boutique doit être spécifiée pour lister les mouvements.");
     }
 
-    // 🟢 ICI, storeId peut être NULL si c'est un Admin. La procédure SQL renverra tout.
-  // Dans le CAS 2 de mouvementService.js :
-    const mouvements = await StockMovementDAL.getByStore(storeId, {
+    const mouvements = await StockMovementDAL.getByStore(storeId, companyId, {
         productId: filter.articleId || null,
-        typeCode: filter.type || null, // 🟢 On passe le filtre type ici
+        typeCode: filter.type || null,
         limit: filter.limit ? parseInt(filter.limit) : 100
     });
+
+    // ✅ CORRECTION DE L'ERREUR "undefined (reading 'map')"
+    const safeMouvements = Array.isArray(mouvements) ? mouvements : [];
 
     const typeMap = {
         1: 'PURCHASE_RECEIPT', 2: 'SALE', 3: 'TRANSFER_OUT', 4: 'TRANSFER_IN',
         5: 'ADJUSTMENT_IN', 6: 'ADJUSTMENT_OUT', 7: 'SALE_CANCEL', 8: 'RETURN_TO_SUPPLIER'
     };
 
-    const formattedData = mouvements.map(m => {
-        let typeCode = m.vcCode || m.type;
+    const formattedData = safeMouvements.map(m => {
+        // ✅ CORRECTION 1 : On utilise les alias exacts de la procédure SQL (typeCode)
+        let typeCode = m.typeCode || m.vcCode || m.type;
         if (!typeCode && m.stockMovementTypeId) {
             typeCode = typeMap[m.stockMovementTypeId] || 'UNKNOWN';
         }
@@ -121,41 +102,45 @@ exports.listerMouvements = async (filter = {}, user = null) => {
         let destinationNom = 'N/A';
 
         if (isPurchase) {
-            origineNom = m.fournisseurNom ? `Fournisseur: ${m.fournisseurNom}` : `Fournisseur #${m.referenceId || 'Inconnu'}`;
+            origineNom = 'Fournisseur';
             destinationNom = m.storeName || `Boutique #${m.storeId}`;
         } else if (isSale) {
             origineNom = m.storeName || `Boutique #${m.storeId}`;
-            destinationNom = 'Client';
+            destinationNom = 'Client (Vente)';
         } else if (isAdjustment) {
             origineNom = m.storeName || `Boutique #${m.storeId}`;
             destinationNom = 'Poubelle / Perte';
         } else if (isTransferOut) {
             origineNom = m.storeName || `Boutique #${m.storeId}`;
-            destinationNom = m.destinationStoreName || `Boutique #${m.referenceId}`;
+            destinationNom = 'Transfert sortant';
         } else if (isTransferIn) {
-            origineNom = m.destinationStoreName || `Boutique #${m.referenceId}`;
+            origineNom = 'Transfert entrant';
             destinationNom = m.storeName || `Boutique #${m.storeId}`;
         }
 
         return {
             _id: m.stockMovementId, 
-            createdAt: m.dtMovementAt || new Date().toISOString(), 
+            createdAt: m.date || new Date().toISOString(), 
             type: typeCode, 
-            typeLabel: m.vcStockMovementType || 'Mouvement de stock', 
-            isPending: isTransferOut, 
-            isCancelled: m.isCancelled === true || m.isCancelled === 1,
+            // ✅ CORRECTION 2 : On utilise typeLabel
+            typeLabel: m.typeLabel || 'Mouvement de stock', 
+            isPending: false, 
+            isCancelled: false,
             
             boutiqueSource: { nom: origineNom },
             boutiqueDestination: { nom: destinationNom },
-            operateur: { nom: m.operatedByName || 'Système' },
+            // ✅ CORRECTION 3 : On utilise userName
+            operateur: { nom: m.userName || 'Système' },
             
             articles: [{
-                articleId: m.productId || m.articleId, 
-                nomArticle: m.vcProductName || 'Produit inconnu',
-                quantite: Math.abs(m.dcQuantity) || 0, 
-                prixAchatUnitaire: m.mUnitPurchasePrice || 0
+                articleId: m.productId, 
+                // ✅ CORRECTION 4 : On utilise productName
+                nomArticle: m.productName || 'Produit inconnu',
+                // ✅ CORRECTION 5 : On utilise quantity
+                quantite: Math.abs(m.quantity) || 0, 
+                prixAchatUnitaire: 0
             }],
-            details: m.vcComment || ''
+            details: m.commentaire || ''
         };
     });
 

@@ -19,14 +19,16 @@ class CashAdminDAL {
   /**
    * Récupère ou crée la caisse centrale et ses 50 derniers mouvements.
    * @param {number} userId 
+   * @param {number} companyId 
    */
-  static async getOrCreateByUser(userId) {
+  static async getOrCreateByUser(userId, companyId) {
     try {
       const pool = await poolPromise;
       
-      // ✅ Appel de la procédure stockée (Zéro SQL)
+      // ✅ On passe le companyId à la procédure stockée
       const result = await pool.request()
         .input('userId', sql.Int, userId)
+        .input('companyId', sql.Int, companyId)
         .execute('dbo.sp_GetCashAdminData');
 
       if (!result.recordsets || result.recordsets.length === 0) return null;
@@ -35,8 +37,11 @@ class CashAdminDAL {
       const caisse = result.recordsets[0][0];
       
       if (caisse) {
-        // On récupère le deuxième recordset (les mouvements)
+        // On récupère le deuxième recordset (les mouvements de trésorerie)
         caisse.movements = result.recordsets[1] || [];
+        
+        // ✅ On récupère le troisième recordset (les transactions Fintech)
+        caisse.fintechTransactions = result.recordsets[2] || [];
       }
       
       return caisse;

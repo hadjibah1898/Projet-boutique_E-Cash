@@ -9,11 +9,20 @@ const ctrl = require('../controllers/authController');
 
 const { protect, requireRole } = require('../middleware/authMiddleware');
 
-// Routes publiques
+// ==========================================
+// ROUTES PUBLIQUES (Pas besoin d'être connecté)
+// ==========================================
 router.post('/register', ctrl.register);
 router.post('/login', ctrl.login);
 
-// Route protégée (utilisateur connecté)
+// ✅ NOUVELLES ROUTES : Mot de passe oublié
+router.post('/forgot-password', ctrl.forgotPassword);
+router.post('/reset-password', ctrl.resetPassword);
+
+
+// ==========================================
+// ROUTES PROTÉGÉES (Utilisateur connecté)
+// ==========================================
 router.get('/me', protect, ctrl.me);
 
 // ✅ Notifications

@@ -107,7 +107,7 @@ exports.enregistrerApprovisionnement = async (payload) => {
             if (!pId) {
                 const nouveauProduit = await ProductDAL.create({
                     companyId: companyId,
-                    vcProductCode: item.code || `ART-${Date.now()}`, 
+                    vcProductCode: item.code || `ART-${Date.now()}`,
                     vcProductName: item.nom || item.nomArticle || 'Nouveau produit',
                     vcDescription: item.description || '',
                     vcBarcode: item.codeBarre || item.vcBarcode || null,
@@ -115,7 +115,7 @@ exports.enregistrerApprovisionnement = async (payload) => {
                     createdByUserId: userId,
                     dcDefaultAlertThreshold: item.seuilAlerte || 10
                 });
-                
+
                 if (!nouveauProduit || !nouveauProduit.productId) {
                     throw new Error(`Échec de création du produit.`);
                 }
@@ -123,13 +123,13 @@ exports.enregistrerApprovisionnement = async (payload) => {
             }
 
             const produitDansBoutique = await ProductDAL.getStoreProductForSale(Number(storeId), Number(pId));
-            
+
             if (produitDansBoutique) {
                 await ProductDAL.updateStorePrice({
                     storeId: Number(storeId),
                     productId: Number(pId),
-                    mCurrentSalePrice: prixVente, 
-                    mPurchasePrice: prixAchat, 
+                    mCurrentSalePrice: prixVente,
+                    // mPurchasePrice retiré car n'existe pas dans tblStoreProduct
                     alertThreshold: item.seuilAlerte || 10,
                     createdByUserId: userId
                 });
@@ -137,8 +137,8 @@ exports.enregistrerApprovisionnement = async (payload) => {
                 await ProductDAL.addStoreProduct({
                     storeId: Number(storeId),
                     productId: Number(pId),
-                    mCurrentSalePrice: prixVente, 
-                    mPurchasePrice: prixAchat, 
+                    mCurrentSalePrice: prixVente,
+                    // mPurchasePrice retiré car n'existe pas dans tblStoreProduct
                     alertThreshold: item.seuilAlerte || 10,
                     createdByUserId: userId
                 });
@@ -150,13 +150,13 @@ exports.enregistrerApprovisionnement = async (payload) => {
                 vcLotNumber: `LOT-${Date.now()}-${pId}`,
                 dcInitialQuantity: quantite,
                 mUnitPurchasePrice: prixAchat,
-                dtExpirationAt: item.datePeremption || item.dtExpirationAt || null 
+                dtExpirationAt: item.datePeremption || item.dtExpirationAt || null
             });
 
             await StockMovementDAL.record({
                 storeId: Number(storeId),
-                productId: Number(pId), 
-                typeCode: 'PURCHASE_RECEIPT', 
+                productId: Number(pId),
+                typeCode: 'PURCHASE_RECEIPT',
                 dcQuantity: quantite,
                 operatedByUserId: userId,
                 vcReferenceType: 'SUPPLIER',
@@ -175,7 +175,7 @@ exports.enregistrerApprovisionnement = async (payload) => {
                         vcSupplierReference: item.code || null,
                         mReferencePurchasePrice: prixAchat,
                         deliveryLeadTimeDays: 0,
-                        IsPreferred: 1 
+                        IsPreferred: 1
                     });
                 }
             } catch (err) {
@@ -221,7 +221,7 @@ exports.expedierTransfert = async (stockTransferId, user, req) => {
     return { success: true, message: "Transfert expédié avec succès.", stockTransferId };
 };
 
-// 🟢 CORRECTION ICI : On récupère le prix d'achat de la source et on le met dans la destination
+// ✅ CORRECTION FINALE : Création du lot de stock dans la destination pour le prix d'achat
 exports.confirmerReceptionTransfert = async (stockTransferId, user, itemsRecus, req) => {
     const { StockMovementDAL } = require('../dal/stockMovementDAL');
     if (!stockTransferId) throw new Error("stockTransferId est obligatoire.");
@@ -230,6 +230,7 @@ exports.confirmerReceptionTransfert = async (stockTransferId, user, itemsRecus, 
     const header = await StockTransferDAL.getHeader(stockTransferId);
     if (!header) throw new Error("Transfert introuvable.");
 
+    // ---- Mise à jour des quantités reçues ----
     if (itemsRecus && itemsRecus.length > 0) {
         const details = await StockTransferDAL.getDetails(stockTransferId);
         const receivedQty = details.map(d => {
@@ -253,54 +254,97 @@ exports.confirmerReceptionTransfert = async (stockTransferId, user, itemsRecus, 
         approvedByUserId: user.userId || user.id
     });
 
+    // ---- Propagation du prix d'achat vers la boutique destination ----
     if (header.destinationStoreId) {
         const details = await StockTransferDAL.getDetails(stockTransferId);
-        // 🟢 On récupère la liste des articles de la Centrale pour avoir leur prix d'achat
-        const sourceCatalog = await ProductDAL.getArticlesWithDetails(Number(header.sourceStoreId));
+        const companyId = user.companyId ? Number(user.companyId) : null;
+
+        const sourceCatalog = await ProductDAL.getArticlesWithDetails(
+            Number(header.sourceStoreId),
+            companyId
+        );
 
         for (const d of details) {
-            // 1. Mise à jour du stock physique
+            const qteRecue = Number(d.dcReceivedQuantity || d.dcRequestedQuantity);
+
             await StockMovementDAL.record({
                 storeId: Number(header.destinationStoreId),
                 productId: Number(d.productId),
                 typeCode: 'TRANSFER_IN',
-                dcQuantity: Number(d.dcReceivedQuantity || d.dcRequestedQuantity),
+                dcQuantity: qteRecue,
                 operatedByUserId: user.userId || user.id,
                 vcReferenceType: 'STORE',
                 referenceId: Number(header.sourceStoreId),
                 vcComment: `Réception transfert depuis boutique #${header.sourceStoreId}`.substring(0, 150)
             });
 
-            // 2. Ajout au catalogue et récupération du prix d'achat
-            const produitExiste = await ProductDAL.getStoreProductForSale(Number(header.destinationStoreId), Number(d.productId));
-            
-            // On cherche le prix d'achat dans le catalogue source
-            const articleSource = sourceCatalog.find(a => Number(a.productId) === Number(d.productId));
-            const prixAchatSource = articleSource ? Number(articleSource.mUnitPurchasePrice) : 0;
+            // Récupération du prix d'achat depuis la source
+            const articleSource = sourceCatalog.find(
+                a => Number(a.productId) === Number(d.productId)
+            );
 
-            if (!produitExiste) {
-                // On récupère le prix de vente de la source
-                const prixSource = await ProductDAL.getStoreProductForSale(Number(header.sourceStoreId), Number(d.productId));
-                const prixVente = prixSource ? prixSource.mCurrentSalePrice : 0;
+            const sourceStoreProduct = await ProductDAL.getStoreProductForSale(
+                Number(header.sourceStoreId),
+                Number(d.productId)
+            );
 
+            const prixAchatSource = Number(
+                (articleSource && (
+                    articleSource.mPurchasePrice ??
+                    articleSource.prixAchat ??
+                    articleSource.mUnitPurchasePrice
+                )) ?? 0
+            );
+
+            const prixVente = Number(
+                (sourceStoreProduct && sourceStoreProduct.mCurrentSalePrice) ?? 0
+            );
+
+            const produitDest = await ProductDAL.getStoreProductForSale(
+                Number(header.destinationStoreId),
+                Number(d.productId)
+            );
+
+            if (!produitDest) {
+                // Le produit n'existe pas encore à la destination → création
                 await ProductDAL.addStoreProduct({
                     storeId: Number(header.destinationStoreId),
                     productId: Number(d.productId),
                     mCurrentSalePrice: prixVente,
-                    mPurchasePrice: prixAchatSource, // 🟢 On met le vrai prix d'achat ici
                     alertThreshold: 10,
                     createdByUserId: user.userId || user.id
                 });
-
-                // 🟢 On ajoute aussi le prix d'achat dans l'historique de la boutique
-                await ProductDAL.addPriceHistory({
+            } else {
+                // Mise à jour du prix de vente dans la destination
+                await ProductDAL.updateStorePrice({
                     storeId: Number(header.destinationStoreId),
                     productId: Number(d.productId),
-                    mPurchasePrice: prixAchatSource,
-                    mSalePrice: prixVente,
+                    mCurrentSalePrice: prixVente,
+                    alertThreshold: 10,
                     createdByUserId: user.userId || user.id
                 });
             }
+
+            // 🟢 LA GRANDE CORRECTION EST ICI : Création du LOT de stock avec le prix d'achat
+            if (qteRecue > 0) {
+                await ProductDAL.createStockLot({
+                    storeId: Number(header.destinationStoreId),
+                    productId: Number(d.productId),
+                    vcLotNumber: `LOT-TRF-${stockTransferId}-${d.productId}`,
+                    dcInitialQuantity: qteRecue,
+                    mUnitPurchasePrice: prixAchatSource, // Le prix d'achat est stocké ici !
+                    dtExpirationAt: null 
+                });
+            }
+
+            // Historique des prix
+            await ProductDAL.addPriceHistory({
+                storeId: Number(header.destinationStoreId),
+                productId: Number(d.productId),
+                mPurchasePrice: prixAchatSource,
+                mSalePrice: prixVente,
+                createdByUserId: user.userId || user.id
+            });
         }
     }
 

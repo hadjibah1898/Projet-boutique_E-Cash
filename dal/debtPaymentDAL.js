@@ -3,15 +3,6 @@
  * @description DAL paiements de dettes — ACCÈS EXCLUSIF via les objets du module
  * utils/debt-payment-module.sql. INTERDIT : tout SQL inline sur dbo.tblDebtPayment,
  * dbo.tblThirdPartyAccount et dbo.tblThirdPartyAccountMovement.
- * sp_CreateDebtPayment insère le paiement, enregistre le mouvement tiers
- * (CUSTOMER_PAYMENT / SUPPLIER_PAYMENT) et met à jour le solde de façon atomique
- * (sa propre transaction, ou celle du appelant via SAVE TRANSACTION).
- * Vues : vw_DebtPaymentDetails.
- * Procédures : sp_CreateDebtPayment, sp_GetDebtPaymentsByAccount,
- *   sp_GetSessionRecoveryLines, sp_GetSessionRecoveryTotals.
- * Codes erreur métier : 52900 (ids), 52901 (méthode), 52902 (statut),
- *   52903 (montant), 52904 (utilisateur), 52905 (compte), 52906 (rattachement),
- *   52907 (type de mouvement).
  * @module DAL/DebtPayment
  */
 
@@ -33,18 +24,7 @@ class DebtPaymentDAL {
   }
 
   /**
-   * Enregistre un paiement de dette via dbo.sp_CreateDebtPayment : la procédure
-   * verrouille le compte (UPDLOCK), détermine CUSTOMER_/SUPPLIER_PAYMENT, insère
-   * le mouvement tiers et met à jour le solde — atomique, sans transaction JS.
-   * @param {Object} data
-   * @param {number} data.thirdPartyAccountId
-   * @param {string} data.paymentMethodCode - Code de la méthode (ex: CASH).
-   * @param {string} [data.paymentStatusCode='SUCCESS']
-   * @param {number} data.mAmount - Strictement > 0 (52903).
-   * @param {number|null} [data.storeId]
-   * @param {number|null} [data.cashSessionId]
-   * @param {number} data.operatedByUserId
-   * @returns {Promise<Object>} { debtPaymentId, nouveauSolde }
+   * Enregistre un paiement de dette via dbo.sp_CreateDebtPayment.
    */
   static async create(data) {
     const {
@@ -97,11 +77,7 @@ class DebtPaymentDAL {
   }
 
   /**
-   * Historique des paiements de dettes d'un compte tiers via
-   * dbo.sp_GetDebtPaymentsByAccount (vw_DebtPaymentDetails : méthode, statut,
-   * nom de l'opérateur — colonnes identiques à l'ancien SELECT).
-   * @param {number} thirdPartyAccountId
-   * @returns {Promise<Array>}
+   * Historique des paiements de dettes d'un compte tiers.
    */
   static async getByAccount(thirdPartyAccountId) {
     try {
@@ -117,10 +93,7 @@ class DebtPaymentDAL {
   }
 
   /**
-   * Lignes de recouvrement SUCCESS d'une session via dbo.sp_GetSessionRecoveryLines
-   * (détail des rapports de caisse).
-   * @param {number} cashSessionId
-   * @returns {Promise<Array>}
+   * Lignes de recouvrement SUCCESS d'une session.
    */
   static async getSessionRecoveryLines(cashSessionId) {
     try {
@@ -136,10 +109,7 @@ class DebtPaymentDAL {
   }
 
   /**
-   * Agrégats des recouvrements d'une session via dbo.sp_GetSessionRecoveryTotals
-   * (bilan de caisse : mTotalRecoveries / mMobileRecoveries / nbRecoveries).
-   * @param {number} cashSessionId
-   * @returns {Promise<Object>} Ligne d'agrégat ({} si aucune donnée).
+   * Agrégats des recouvrements d'une session.
    */
   static async getSessionRecoveryTotals(cashSessionId) {
     try {
@@ -149,6 +119,44 @@ class DebtPaymentDAL {
         .execute('dbo.sp_GetSessionRecoveryTotals');
 
       return result.recordset[0] || {};
+    } catch (err) {
+      throw DebtPaymentDAL._mapSqlError(err);
+    }
+  }
+
+  /**
+   * ✅ CORRIGÉ : Total de TOUTES les dettes encaissées (Zéro SQL Inline).
+   */
+  static async getTotalDebtPayments(companyId, { startDate, endDate, storeId } = {}) {
+    try {
+      const pool = await poolPromise;
+      const result = await pool.request()
+        .input('companyId', sql.Int, companyId)
+        .input('storeId', sql.Int, storeId || null)
+        .input('startDate', sql.DateTime, startDate ? new Date(startDate) : null)
+        .input('endDate', sql.DateTime, endDate ? new Date(endDate) : null)
+        .execute('dbo.sp_GetTotalDebtPayments'); // 👈 Appel de la procédure
+
+      return result.recordset[0]?.totalDebt || 0;
+    } catch (err) {
+      throw DebtPaymentDAL._mapSqlError(err);
+    }
+  }
+
+  /**
+   * ✅ CORRIGÉ : Total des dettes Fintech encaissées (Zéro SQL Inline).
+   */
+  static async getFintechDebtPaymentsTotal(companyId, { startDate, endDate, storeId } = {}) {
+    try {
+      const pool = await poolPromise;
+      const result = await pool.request()
+        .input('companyId', sql.Int, companyId)
+        .input('storeId', sql.Int, storeId || null)
+        .input('startDate', sql.DateTime, startDate ? new Date(startDate) : null)
+        .input('endDate', sql.DateTime, endDate ? new Date(endDate) : null)
+        .execute('dbo.sp_GetFintechDebtPaymentsTotal'); // 👈 Appel de la procédure
+
+      return result.recordset[0]?.totalFintechDebt || 0;
     } catch (err) {
       throw DebtPaymentDAL._mapSqlError(err);
     }

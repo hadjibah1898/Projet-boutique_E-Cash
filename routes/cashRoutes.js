@@ -1,9 +1,7 @@
 /**
  * @file cashRoutes.js
  * @description Routes caisses, sessions et rapports de caisse.
- * @module Routes/Cash
  */
-
 const router = require('express').Router();
 const ctrl = require('../controllers/cashController');
 const { protect, requireRole } = require('../middleware/authMiddleware');
@@ -12,19 +10,45 @@ const { checkSingleOpenSession, checkManagerCaisseOuverte } = require('../middle
 
 router.use(protect);
 
-// ✅ 1. ROUTES SPÉCIFIQUES EN PREMIER (pour éviter les conflits avec les :paramètres)
-router.get('/reports/me', ctrl.listReports);
+// ==========================================
+// 1. RAPPORTS (ROUTES SPÉCIFIQUES EN PREMIER)
+// ==========================================
+
+// Mes rapports (Le gérant voit ses propres clôtures de caisse)
+router.get('/reports/me', ctrl.getMyReports); 
+
+// ✅ LA ROUTE QUE REACT CHERCHE
+router.post('/reports/:cashReportId/approve', requireRole('ADMIN', 'MANAGER'), checkManagerCaisseOuverte, ctrl.approveReport);
+router.post('/reports/:cashReportId/reject', requireRole('ADMIN', 'MANAGER'), checkManagerCaisseOuverte, ctrl.rejectReport);
+
+// Routes spécifiques "Caissiers" (si React les utilise)
+router.get('/reports/caissiers', requireRole('MANAGER', 'ADMIN'), ctrl.listCashierReports);
+router.post('/reports/caissiers/:cashReportId/approve', requireRole('MANAGER', 'ADMIN'), checkManagerCaisseOuverte, ctrl.approveReport);
+router.post('/reports/caissiers/:cashReportId/reject', requireRole('MANAGER', 'ADMIN'), checkManagerCaisseOuverte, ctrl.rejectReport);
+router.get('/reports/caissiers/:cashReportId/details', ctrl.getReportDetails);
+
+// Liste globale des rapports
 router.get('/reports', ctrl.listReports);
+
+// Route générique des sessions
+router.get('/reports/:cashSessionId', ctrl.getReports);
+
+// Route de correction
+router.put('/correction', requireRole('ADMIN', 'MANAGER', 'SUPER_ADMIN'), ctrl.correctReport);
+router.get('/reports-detail/:cashReportId', ctrl.getReportDetails);
+
+
+// ==========================================
+// 2. SESSIONS ET CAISSES
+// ==========================================
 router.get('/status/mine', ctrl.getCashStatus);
 router.get('/sessions/mine', ctrl.myOpenSession);
 router.get('/sessions/my-history', ctrl.myHistory);
 router.get('/sessions/stats/mine', ctrl.getSessionStats);
 
-// ✅ 2. ROUTES POUR LES DEPENSES
 router.get('/expenses/me', ctrl.getMyExpenses);
 router.post('/expenses', ctrl.createExpense);
 
-// ✅ 3. ROUTES AVEC PARAMÈTRES ENSUITE
 router.get('/registers/:storeId', requireStoreAccess, ctrl.getRegisters);
 router.post('/registers', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.createRegister);
 
@@ -33,15 +57,10 @@ router.post('/sessions/open', requireRole('ADMIN', 'MANAGER', 'CASHIER'), requir
 router.post('/sessions/close', requireRole('ADMIN', 'MANAGER', 'CASHIER'), ctrl.closeMySession);
 router.post('/sessions/:cashSessionId/close', requireRole('ADMIN', 'MANAGER', 'CASHIER'), requireOwnCashSession, ctrl.closeSession);
 
-router.get('/reports/:cashSessionId', ctrl.getReports);
-router.get('/reports-detail/:cashReportId', ctrl.getReportDetails);
-
+router.post('/reports', requireRole('ADMIN', 'MANAGER', 'CASHIER'), ctrl.createReport);
 router.get('/admin', requireRole('ADMIN', 'SUPER_ADMIN'), ctrl.getCaisseAdmin);
 
-router.post('/reports', requireRole('ADMIN', 'MANAGER', 'CASHIER'), ctrl.createReport);
-router.post('/reports/:cashReportId/approve', requireRole('ADMIN', 'MANAGER'), checkManagerCaisseOuverte, ctrl.approveReport);
-
-// ⚠️ CORRECTION : On utilise ctrl.rejectReport et non approveReport
-router.post('/reports/:cashReportId/reject', requireRole('ADMIN', 'MANAGER'), checkManagerCaisseOuverte, ctrl.rejectReport);
+// ============================== TREASURY ACCOUNTS ==============================
+router.get('/treasury-accounts', ctrl.getTreasuryAccounts);
 
 module.exports = router;

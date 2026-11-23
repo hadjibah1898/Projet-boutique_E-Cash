@@ -52,11 +52,24 @@ exports.cancelTransfer = asyncHandler(async (req, res) => {
 exports.getTransfer = asyncHandler(async (req, res) => {
   const header = await StockTransferDAL.getHeader(Number(req.params.stockTransferId));
   if (!header) return res.status(404).json({ success: false, message: 'Transfert introuvable.' });
+  
+  if (header.companyId && header.companyId !== req.user.companyId && req.user.roleCode !== 'SUPER_ADMIN') {
+      return res.status(403).json({ success: false, message: 'Accès refusé : ce transfert appartient à une autre entreprise.' });
+  }
+
   res.json({ success: true, data: { ...header, details: await StockTransferDAL.getDetails(Number(req.params.stockTransferId)) } });
 });
 
 exports.getTransfersByStore = asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await StockTransferDAL.getByStore(Number(req.params.storeId), req.query) });
+  const companyId = req.user.companyId ? Number(req.user.companyId) : null;
+  if (!companyId || isNaN(companyId)) {
+      return res.status(403).json({ success: false, message: "Erreur : Aucune entreprise associée à votre compte." });
+  }
+
+  res.json({ 
+      success: true, 
+      data: await StockTransferDAL.getByStore(Number(req.params.storeId), companyId, req.query) 
+  });
 });
 
 // ==========================================
@@ -87,11 +100,26 @@ exports.decideAdjustment = asyncHandler(async (req, res) => {
 exports.getAdjustment = asyncHandler(async (req, res) => {
   const header = await StockAdjustmentDAL.getHeader(Number(req.params.stockAdjustmentId));
   if (!header) return res.status(404).json({ success: false, message: 'Ajustement introuvable.' });
+
+  if (header.companyId && header.companyId !== req.user.companyId && req.user.roleCode !== 'SUPER_ADMIN') {
+      return res.status(403).json({ success: false, message: 'Accès refusé : cet ajustement appartient à une autre entreprise.' });
+  }
+
   res.json({ success: true, data: { ...header, details: await StockAdjustmentDAL.getDetails(Number(req.params.stockAdjustmentId)) } });
 });
 
 exports.getAdjustmentsByStore = asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await StockAdjustmentDAL.getByStore(Number(req.params.storeId), req.query) });
+  const storeId = req.params.storeId ? Number(req.params.storeId) : (req.query.storeId ? Number(req.query.storeId) : null);
+  
+  const companyId = req.user.companyId ? Number(req.user.companyId) : null;
+  if (!companyId || isNaN(companyId)) {
+      return res.status(403).json({ success: false, message: "Erreur : Impossible d'identifier votre entreprise." });
+  }
+
+  res.json({ 
+      success: true, 
+      data: await StockAdjustmentDAL.getByStore(storeId, companyId, req.query) 
+  });
 });
 
 // ==========================================
@@ -144,17 +172,22 @@ exports.getActivePromotions = asyncHandler(async (req, res) => {
 });
 
 exports.getMovements = asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await StockMovementDAL.getByStore(Number(req.params.storeId), req.query) });
+  const companyId = req.user.companyId ? Number(req.user.companyId) : null;
+  
+  if (!companyId || isNaN(companyId)) {
+      return res.status(403).json({ success: false, message: "Erreur : Impossible d'identifier votre entreprise." });
+  }
+
+  res.json({ 
+      success: true, 
+      data: await StockMovementDAL.getByStore(Number(req.params.storeId), companyId, req.query) 
+  });
 });
 
 // ==========================================
 // 5. NOUVELLE FONCTION : MOUVEMENTS (ROUTE RACINE)
 // ==========================================
 
-/**
- * ✅ Récupère la liste des mouvements/transferts pour le frontend.
- * Le storeId est lu depuis req.query.boutiqueSource (envoyé par le frontend).
- */
 exports.getAllMovements = asyncHandler(async (req, res) => {
   const storeId = req.query.boutiqueSource || req.query.boutique || req.user.storeId;
   
@@ -162,10 +195,13 @@ exports.getAllMovements = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'storeId (boutique) est obligatoire.' });
   }
 
-  try {
-    // On utilise la méthode existante de votre DAL
-    const transfers = await StockTransferDAL.getByStore(parseInt(storeId, 10), req.query);
+  const companyId = req.user.companyId ? Number(req.user.companyId) : null;
+  if (!companyId || isNaN(companyId)) {
+      return res.status(403).json({ success: false, message: "Erreur : Impossible d'identifier votre entreprise." });
+  }
 
+  try {
+    const transfers = await StockTransferDAL.getByStore(parseInt(storeId, 10), companyId, req.query);
     res.json({ success: true, data: transfers });
   } catch (error) {
     console.error("Erreur getAllMovements:", error);

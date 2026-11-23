@@ -5,6 +5,7 @@
  */
 
 const DashboardDAL = require('../dal/dashboardDAL');
+const StoreDAL = require('../dal/storeDAL'); // ✅ Requis pour vérifier l'accès aux boutiques
 const asyncHandler = require('../middleware/asyncHandler');
 
 /**
@@ -12,50 +13,47 @@ const asyncHandler = require('../middleware/asyncHandler');
  * Statistiques pour l'Admin (limitées à son entreprise), le SuperAdmin (global) et le Gérant (sa boutique).
  */
 exports.getStats = asyncHandler(async (req, res) => {
-  const roleCode = String(req.user.roleCode).toUpperCase();
+  const roleCode = String(req.user.roleCode || '').toUpperCase();
   const isSuperAdmin = roleCode === 'SUPER_ADMIN';
   const isManager = roleCode === 'MANAGER';
-  
-  // SuperAdmin n'a pas de companyId spécifique, Admin et Manager ont le leur
-  const companyId = isSuperAdmin ? null : req.user.companyId;
-  
-  // ✅ SÉCURITÉ : Si c'est un Gérant, on force l'ID de SA boutique. 
-  // Sinon, on utilise ce que l'admin a passé en paramètre.
-  let storeId = req.query.storeId || req.query.boutique || null;
-  if (isManager) {
-    storeId = req.user.storeId;
-  }
+  const isAdmin = roleCode === 'ADMIN';
 
-  if (!isSuperAdmin && !companyId) {
+  // SuperAdmin n'a pas de companyId spécifique
+  const companyId = isSuperAdmin ? null : (req.user.companyId ? Number(req.user.companyId) : null);
+  
+  // Récupération du storeId demandé par l'utilisateur (query string)
+  let storeId = req.query.storeId 
+    ? Number(req.query.storeId) 
+    : (req.query.boutique ? Number(req.query.boutique) : null);
+
+  // 🛡️ SÉCURITÉ 1 : Un non Super Admin doit obligatoirement avoir une entreprise
+  if (!isSuperAdmin && (!companyId || isNaN(companyId))) {
     return res.status(403).json({ success: false, message: 'Aucune entreprise associée à votre compte.' });
   }
 
-  try {
-    // ⚠️ On suppose que tu as modifié DashboardDAL pour accepter le storeId (voir étape 2)
-    // Si ta fonction actuelle s'appelle getSuperAdminStats, tu peux lui ajouter le 2ème paramètre
-    const stats = await DashboardDAL.getSuperAdminStats(companyId, storeId, req.query.range);
-    
-    // ✅ On renvoie TOUT l'objet stats au frontend, au lieu de le tronquer
-    res.json({ 
-      success: true, 
-      data: stats 
-    });
-  } catch (err) {
-    console.error("Erreur stats dashboard:", err);
-    // Fallback complet en cas d'erreur SQL pour ne pas faire planter React
-    res.json({ 
-      success: true, 
-      data: { 
-        dailySales: 0, dailyOrders: 0, totalCA: 0, totalRefunds: 0, totalBenefice: 0,
-        salesProfit: { categories: [], series: [] },
-        productSales: { labels: [], series: [] },
-        performanceBoutiques: [],
-        performanceGerants: [],
-        stockBoutiques: [],
-        totalArticlesFaibleStock: 0
-      } 
-    });
+  // 🛡️ SÉCURITÉ 2 : Un Gérant ne voit QUE sa propre boutique
+  if (isManager) {
+    storeId = req.user.storeId ? Number(req.user.storeId) : null;
+    if (!storeId) {
+      return res.status(403).json({ success: false, message: 'Aucune boutique associée à votre compte.' });
+    }
   }
+
+  // 🛡️ SÉCURITÉ 3 : Un Admin qui demande une boutique doit s'assurer qu'elle lui appartient
+  if (isAdmin && storeId) {
+    const store = await StoreDAL.findById(storeId, companyId);
+    if (!store) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "Accès refusé : cette boutique n'appartient pas à votre entreprise." 
+      });
+    }
+  }
+
+  // ✅ On laisse remonter les erreurs SQL (le middleware d'erreur les gérera proprement)
+  const stats = await DashboardDAL.getStats(companyId, storeId, req.query.range);
+  
+  res.json({ success: true, data: stats });
 });
 
 /**
@@ -63,6 +61,14 @@ exports.getStats = asyncHandler(async (req, res) => {
  * Compteurs globaux + liste des entreprises (réservé au SUPER_ADMIN).
  */
 exports.getSuperAdminStats = asyncHandler(async (req, res) => {
-  const stats = await DashboardDAL.getSuperAdminStats(null, null);
+  // 🛡️ SÉCURITÉ : On vérifie le rôle ici aussi (au cas où la route ne le ferait pas)
+  if (String(req.user.roleCode).toUpperCase() !== 'SUPER_ADMIN') {
+    return res.status(403).json({ 
+      success: false, 
+      message: 'Accès réservé au Super Administrateur.' 
+    });
+  }
+
+  const stats = await DashboardDAL.getStats(null, null, req.query.range);
   res.json({ success: true, data: stats });
 });

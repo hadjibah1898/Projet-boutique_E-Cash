@@ -1,14 +1,7 @@
+
 /**
  * @file treasuryDAL.js
- * @description DAL trésorerie — ACCÈS EXCLUSIF via les objets du module
- * utils/treasury-module.sql. INTERDIT : tout SQL inline sur dbo.tblTreasuryAccount
- * et dbo.tblTreasuryMovement (calculs de solde et transactions sont délégués
- * aux procédures).
- * Vues : vw_TreasuryAccountDetails, vw_TreasuryMovementDetails.
- * Procédures : usp_CreateTreasuryAccount, usp_GetTreasuryAccounts,
- *   usp_RecordTreasuryMovement, usp_GetTreasuryMovements.
- * Direction des mouvements issue de tblRefTreasuryMovementType (1 = entrée, -1 = sortie),
- * appliquée en SQL par usp_RecordTreasuryMovement.
+ * @description DAL trésorerie — accès exclusif via les procédures SQL.
  * @module DAL/Treasury
  */
 
@@ -16,11 +9,7 @@ const { sql, poolPromise } = require('../config/db');
 const RefDAL = require('./refDAL');
 
 class TreasuryDAL {
-  /**
-   * Helper privé pour formater les erreurs SQL métier (plage 50000 - 54000,
-   * couvre les codes 51300-51309 du module trésorerie).
-   * @private
-   */
+
   static _mapSqlError(err) {
     if (err && err.number >= 50000 && err.number < 54000) {
       const cleanErr = new Error(err.message);
@@ -30,124 +19,181 @@ class TreasuryDAL {
     return err;
   }
 
-  /**
-   * Crée un compte de trésorerie via dbo.usp_CreateTreasuryAccount
-   * (contrôles 51300-51303 ; le type est re-validé par la SP : 51301).
-   * @param {Object} data
-   * @param {number} data.companyId
-   * @param {number|null} [data.storeId]
-   * @param {string} data.treasuryAccountTypeCode
-   * @param {string} data.vcAccountName
-   * @param {number} [data.mCurrentBalance=0]
-   * @returns {Promise<Object>} { treasuryAccountId, companyId, storeId, vcAccountName, mCurrentBalance }
-   */
   static async createAccount(data) {
     const {
-      companyId, storeId = null, treasuryAccountTypeCode,
-      vcAccountName, mCurrentBalance = 0
+      companyId,
+      storeId = null,
+      treasuryAccountTypeCode,
+      vcAccountName,
+      mCurrentBalance = 0
     } = data;
 
-    // Assurez-vous que RefDAL utilise aussi usp_GetReferenceByCode !
-    const type = await RefDAL.getByCode('treasuryAccountType', treasuryAccountTypeCode);
-    if (!type) throw new Error(`Type de compte inconnu : ${treasuryAccountTypeCode}`);
-    if (!vcAccountName || !vcAccountName.trim()) throw new Error('vcAccountName est obligatoire.');
+    const type = await RefDAL.getByCode(
+      'treasuryAccountType',
+      treasuryAccountTypeCode
+    );
+
+    if (!type) {
+      throw new Error(`Type de compte inconnu : ${treasuryAccountTypeCode}`);
+    }
+
+    if (!vcAccountName || !vcAccountName.trim()) {
+      throw new Error('vcAccountName est obligatoire.');
+    }
 
     try {
       const pool = await poolPromise;
+
       const result = await pool.request()
         .input('companyId', sql.Int, companyId)
         .input('storeId', sql.Int, storeId)
         .input('treasuryAccountTypeId', sql.Int, type.treasuryAccountTypeId)
         .input('vcAccountName', sql.VarChar(50), vcAccountName.trim())
         .input('mCurrentBalance', sql.Money, mCurrentBalance)
-        .execute('dbo.usp_CreateTreasuryAccount'); // <-- MODIFIÉ ICI
+        .execute('dbo.usp_CreateTreasuryAccount');
 
       return result.recordset[0];
+
     } catch (err) {
       throw TreasuryDAL._mapSqlError(err);
     }
   }
 
-  /**
-   * Comptes de trésorerie d'une entreprise via dbo.usp_GetTreasuryAccounts
-   * (vw_TreasuryAccountDetails ; comptes désactivés inclus, comme précédemment).
-   * @param {number} companyId
-   * @returns {Promise<Array>}
-   */
   static async getAccounts(companyId) {
     try {
       const pool = await poolPromise;
+
       const result = await pool.request()
         .input('companyId', sql.Int, companyId)
-        .execute('dbo.usp_GetTreasuryAccounts'); // <-- MODIFIÉ ICI
+        .execute('dbo.usp_GetTreasuryAccounts');
 
       return result.recordset;
+
     } catch (err) {
       throw TreasuryDAL._mapSqlError(err);
     }
   }
 
   /**
-   * Enregistre un mouvement de trésorerie via dbo.usp_RecordTreasuryMovement :
-   * la procédure, dans sa propre transaction, verrouille le compte (51309),
-   * applique la direction du type de mouvement (51305), insère le mouvement
-   * avec solde avant/après puis met à jour le compte — atomique en SQL.
-   * @param {Object} data
-   * @param {number} data.treasuryAccountId
-   * @param {string} data.typeCode - Code du type de mouvement.
-   * @param {number} data.mAmount - Montant strictement positif (> 0).
-   * @param {number|null} [data.cashReportId]
-   * @param {string} data.vcDescription
-   * @param {number} data.operatedByUserId
-   * @returns {Promise<Object>} { treasuryMovementId, mBalanceAfter }
+   * Enregistre un mouvement de trésorerie.
+   *
+   * IMPORTANT :
+   * usp_RecordTreasuryMovement effectue déjà :
+   * 1. L'insertion du mouvement.
+   * 2. Le calcul du nouveau solde.
+   * 3. La mise à jour du compte.
+   *
+   * Ne jamais ajouter un UPDATE manuel du solde après cette méthode.
    */
   static async recordMovement(data) {
     const {
-      treasuryAccountId, typeCode, mAmount, cashReportId = null,
-      vcDescription, operatedByUserId
+      treasuryAccountId,
+      typeCode,
+      mAmount,
+      cashReportId = null,
+      vcDescription,
+      operatedByUserId
     } = data;
 
-    if (!mAmount || mAmount <= 0) throw new Error('CK_TreasuryMovement_Amount : mAmount > 0 requis.');
-    if (!vcDescription || !vcDescription.trim()) throw new Error('vcDescription est obligatoire (NOT NULL).');
-    if (!operatedByUserId) throw new Error('OperatedByUserId est obligatoire (NOT NULL).');
+    if (!Number.isFinite(Number(mAmount)) || Number(mAmount) <= 0) {
+      throw new Error(
+        'CK_TreasuryMovement_Amount : mAmount > 0 requis.'
+      );
+    }
 
-    const type = await RefDAL.getByCode('treasuryMovementType', typeCode);
-    if (!type) throw new Error(`Type de mouvement inconnu : ${typeCode}`);
+    if (!vcDescription || !vcDescription.trim()) {
+      throw new Error('vcDescription est obligatoire (NOT NULL).');
+    }
+
+    if (!operatedByUserId) {
+      throw new Error('OperatedByUserId est obligatoire (NOT NULL).');
+    }
+
+    const type = await RefDAL.getByCode(
+      'treasuryMovementType',
+      typeCode
+    );
+
+    if (!type) {
+      throw new Error(`Type de mouvement inconnu : ${typeCode}`);
+    }
 
     try {
       const pool = await poolPromise;
+
       const result = await pool.request()
         .input('treasuryAccountId', sql.Int, treasuryAccountId)
-        .input('treasuryMovementTypeId', sql.Int, type.treasuryMovementTypeId)
+        .input(
+          'treasuryMovementTypeId',
+          sql.Int,
+          type.treasuryMovementTypeId
+        )
         .input('cashReportId', sql.Int, cashReportId)
-        .input('mAmount', sql.Money, mAmount)
+        .input('mAmount', sql.Money, Number(mAmount))
         .input('vcDescription', sql.VarChar(150), vcDescription.trim())
         .input('OperatedByUserId', sql.Int, operatedByUserId)
-        .execute('dbo.usp_RecordTreasuryMovement'); // <-- MODIFIÉ ICI
+        .execute('dbo.usp_RecordTreasuryMovement');
 
-      return result.recordset[0];
+      return result.recordset?.[0] || null;
+
     } catch (err) {
       throw TreasuryDAL._mapSqlError(err);
     }
   }
 
-  /**
-   * Historique des mouvements d'un compte via dbo.usp_GetTreasuryMovements
-   * (vw_TreasuryMovementDetails ; @limit borné à 1000 par la procédure).
-   * @param {number} treasuryAccountId
-   * @param {Object} [options]
-   * @param {number} [options.limit=100]
-   * @returns {Promise<Array>}
-   */
-  static async getMovements(treasuryAccountId, { limit = 100 } = {}) {
+  static async getMovements(
+    treasuryAccountId,
+    { limit = 100 } = {}
+  ) {
     try {
       const pool = await poolPromise;
+
       const result = await pool.request()
         .input('treasuryAccountId', sql.Int, treasuryAccountId)
         .input('limit', sql.Int, limit)
-        .execute('dbo.usp_GetTreasuryMovements'); // <-- MODIFIÉ ICI
+        .execute('dbo.usp_GetTreasuryMovements');
 
       return result.recordset;
+
+    } catch (err) {
+      throw TreasuryDAL._mapSqlError(err);
+    }
+  }
+
+  static async getRecentMovementsByCompany(
+    companyId,
+    limit = 50
+  ) {
+    try {
+      const pool = await poolPromise;
+
+      const result = await pool.request()
+        .input('companyId', sql.Int, companyId)
+        .input('limit', sql.Int, limit)
+        .query(`
+          SELECT TOP (@limit)
+              m.treasuryMovementId,
+              m.treasuryAccountId,
+              a.vcAccountName,
+              at.vcCode AS accountTypeCode,
+              at.vcTreasuryAccountType AS accountTypeName,
+              m.mAmount,
+              m.vcDescription,
+              m.dtCreatedAt,
+              t.vcTreasuryMovementType AS typeCode
+          FROM dbo.tblTreasuryMovement m
+          INNER JOIN dbo.tblTreasuryAccount a
+              ON a.treasuryAccountId = m.treasuryAccountId
+          INNER JOIN dbo.tblRefTreasuryAccountType at
+              ON at.treasuryAccountTypeId = a.treasuryAccountTypeId
+          INNER JOIN dbo.tblRefTreasuryMovementType t
+              ON t.treasuryMovementTypeId = m.treasuryMovementTypeId
+          WHERE a.companyId = @companyId
+          ORDER BY m.dtCreatedAt DESC
+        `);
+
+      return result.recordset || [];
+
     } catch (err) {
       throw TreasuryDAL._mapSqlError(err);
     }

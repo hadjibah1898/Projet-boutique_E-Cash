@@ -78,16 +78,29 @@ class StockMovementDAL {
    * Historique des mouvements d'une boutique via dbo.sp_GetStockMovementsByStore
    * (vw_StockMovementDetails ; filtre produit optionnel, @limit borné à 1000).
    * @param {number} storeId
+   * @param {number} companyId - ✅ NOUVEAU : ID de l'entreprise pour isolation
    * @param {Object} [options]
    * @param {number|null} [options.productId]
    * @param {string|null} [options.typeCode]
    * @param {number} [options.limit=100]
    * @returns {Promise<Array>}
    */
-  static async getByStore(storeId, { productId = null, typeCode = null, limit = 100 } = {}) {
+  static async getByStore(storeId, companyId, options = {}) {
     try {
       const pool = await poolPromise;
       
+      // 🛡️ PROTECTION ABSOLUE 1 : Si le contrôleur a envoyé un objet à la place du companyId
+      if (typeof companyId === 'object' && companyId !== null) {
+          options = companyId;
+          companyId = null;
+      }
+
+      // 🛡️ PROTECTION ABSOLUE 2 : On force la conversion en entier (ou null)
+      const safeCompanyId = companyId ? parseInt(companyId, 10) : null;
+      const safeStoreId = storeId ? parseInt(storeId, 10) : null;
+      
+      const { productId = null, typeCode = null, limit = 100 } = options;
+
       // 🟢 On récupère l'ID du type de mouvement si un code est fourni
       let stockMovementTypeId = null;
       if (typeCode) {
@@ -96,9 +109,10 @@ class StockMovementDAL {
       }
 
       const result = await pool.request()
-        .input('storeId', sql.Int, storeId)
+        .input('storeId', sql.Int, safeStoreId)
+        .input('companyId', sql.Int, isNaN(safeCompanyId) ? null : safeCompanyId) // ✅ Sécurité anti-crash
         .input('productId', sql.BigInt, productId)
-        .input('stockMovementTypeId', sql.Int, stockMovementTypeId) // 🟢 Filtre type
+        .input('stockMovementTypeId', sql.Int, stockMovementTypeId)
         .input('limit', sql.Int, limit)
         .execute('dbo.sp_GetStockMovementsByStore');
 

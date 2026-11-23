@@ -46,7 +46,7 @@ class ProductDAL {
         .input('companyId', sql.Int, companyId)
         .execute('dbo.sp_GetProductCategoriesByCompany');
 
-      return result.recordset;
+      return result.recordset || [];
     } catch (err) {
       throw ProductDAL._mapSqlError(err);
     }
@@ -120,13 +120,17 @@ class ProductDAL {
     }
   }
 
-  static async getArticlesWithDetails(storeId) {
+  /**
+   * ✅ MODIFIÉ : On ajoute companyId pour la sécurité multi-entreprise
+   */
+  static async getArticlesWithDetails(storeId, companyId) {
     try {
       const pool = await poolPromise;
       const result = await pool.request()
-        .input('storeId', sql.Int, storeId)
+        .input('storeId', sql.Int, storeId || null)
+        .input('companyId', sql.Int, companyId) // ✅ Envoi du companyId
         .execute('dbo.sp_GetArticlesWithDetails');
-      return result.recordset;
+      return result.recordset || [];
     } catch (err) {
       throw ProductDAL._mapSqlError(err);
     }
@@ -139,7 +143,7 @@ class ProductDAL {
         .input('companyId', sql.Int, companyId)
         .execute('dbo.sp_GetProductsByCompany');
 
-      return result.recordset;
+      return result.recordset || [];
     } catch (err) {
       throw ProductDAL._mapSqlError(err);
     }
@@ -195,7 +199,7 @@ class ProductDAL {
         .input('limit', sql.Int, limit)
         .execute('dbo.sp_SearchStoreProducts');
 
-      return result.recordset;
+      return result.recordset || [];
     } catch (err) {
       throw ProductDAL._mapSqlError(err);
     }
@@ -215,14 +219,17 @@ class ProductDAL {
     }
   }
 
-  static async getSaleCatalog(storeId) {
+  // ✅ CORRECTION ICI : On accepte le companyId et on sécurise le retour
+  static async getSaleCatalog(storeId, companyId) {
     try {
       const pool = await poolPromise;
       const result = await pool.request()
-        .input('storeId', sql.Int, storeId)
+        .input('storeId', sql.Int, storeId || null)
+        .input('companyId', sql.Int, companyId || null) // ✅ Envoi du companyId
         .execute('dbo.sp_GetSaleCatalogByStore');
 
-      return result.recordset;
+      // ✅ SÉCURITÉ : On renvoie un tableau vide si la base ne renvoie rien
+      return result.recordset || [];
     } catch (err) {
       throw ProductDAL._mapSqlError(err);
     }
@@ -278,7 +285,6 @@ class ProductDAL {
     }
   }
 
-  // 🟢 CORRECTION ICI : Appel de la procédure stockée au lieu de SQL inline
   static async updatePromotions(data) {
     const { storeId, productId, mPromoRate, btPromoActive, dtPromoStart, dtPromoEnd, mExceptionDiscount } = data;
     try {
@@ -304,7 +310,7 @@ class ProductDAL {
         .input('productId', sql.BigInt, productId)
         .execute('dbo.sp_GetStoreProductsByProduct');
 
-      return result.recordset;
+      return result.recordset || [];
     } catch (err) {
       throw ProductDAL._mapSqlError(err);
     }
@@ -354,7 +360,7 @@ class ProductDAL {
         .input('storeId', sql.Int, storeId)
         .execute('dbo.sp_GetProductLotExpiries');
 
-      return result.recordset;
+      return result.recordset || [];
     } catch (err) {
       throw ProductDAL._mapSqlError(err);
     }
@@ -368,7 +374,7 @@ class ProductDAL {
         .input('onlyValidated', sql.Bit, onlyValidated ? 1 : 0)
         .execute('dbo.sp_GetStoreProducts'); 
 
-      return result.recordset;
+      return result.recordset || [];
     } catch (err) {
       throw ProductDAL._mapSqlError(err);
     }
@@ -388,7 +394,6 @@ class ProductDAL {
     }
   }
 
-  // 🟢 CORRECTION ICI : Appel de la procédure stockée au lieu de SQL inline
   static async addPriceHistory(data) {
     const { storeId, productId, mPurchasePrice, mSalePrice, createdByUserId } = data;
     try {
@@ -403,6 +408,69 @@ class ProductDAL {
       return result;
     } catch (err) {
       console.error("Erreur SQL addPriceHistory:", err);
+      throw ProductDAL._mapSqlError(err);
+    }
+  }
+    /**
+   * Récupère tous les lots d'un produit dans une boutique spécifique.
+   */
+  static async getProductLots(productId, storeId, companyId) {
+    try {
+      const pool = await poolPromise;
+      const result = await pool.request()
+        .input('productId', sql.BigInt, productId)
+        .input('storeId',   sql.Int,    storeId)
+        .input('companyId', sql.Int,    companyId)
+        .execute('dbo.sp_GetStockLotsByProduct');
+      return result.recordset || [];
+    } catch (err) {
+      throw ProductDAL._mapSqlError(err);
+    }
+  }
+
+  /**
+   * Met à jour la date de péremption d'UN SEUL lot.
+   * Intègre une vérification stricte (produit + boutique + entreprise) 
+   * avant d'appeler la SP existante.
+   */
+  static async updateLotExpiration({ productId, stockLotId, storeId, companyId, dtExpirationAt }) {
+    try {
+      const pool = await poolPromise;
+
+      // 1. Vérification d'appartenance stricte (anti-fraude inter-produit / inter-boutique)
+      const check = await pool.request()
+        .input('stockLotId', sql.Int,    stockLotId)
+        .input('productId',  sql.BigInt, productId)
+        .input('storeId',    sql.Int,    storeId)
+        .input('companyId',  sql.Int,    companyId)
+        .query(`
+          SELECT 1
+          FROM dbo.tblStockLot AS l
+          INNER JOIN dbo.tblProduct AS p ON p.productId = l.productId
+          INNER JOIN dbo.tblStore   AS s ON s.storeId   = l.storeId
+          WHERE l.stockLotId = @stockLotId
+            AND l.productId  = @productId
+            AND l.storeId    = @storeId
+            AND p.companyId  = @companyId
+            AND s.companyId  = @companyId
+            AND l.btEnabled  = 1
+        `);
+
+      if (!check.recordset || check.recordset.length === 0) {
+        const err = new Error('Lot introuvable ou non autorisé pour ce produit/boutique.');
+        err.sqlNumber = 52543;
+        throw err;
+      }
+
+      // 2. Appel de la SP de mise à jour
+      const result = await pool.request()
+        .input('stockLotId',     sql.Int,  stockLotId)
+        .input('companyId',      sql.Int,  companyId)
+        .input('dtExpirationAt', sql.Date, dtExpirationAt || null)
+        .execute('dbo.sp_UpdateStockLotExpiration');
+
+      return result.recordset && result.recordset.length > 0 ? result.recordset[0] : null;
+    } catch (err) {
       throw ProductDAL._mapSqlError(err);
     }
   }
