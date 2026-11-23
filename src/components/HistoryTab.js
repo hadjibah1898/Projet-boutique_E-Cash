@@ -1,6 +1,7 @@
 /**
- * @file HistoryTab.js - Version 2.0
+ * @file HistoryTab.js - Version 2.1 (Sécurisée)
  * @description Historique des ventes complet avec filtres avancés, tri, export et modal de détail.
+ * Correction : Ajout de protections contre les tableaux 'items' vides ou indéfinis.
  */
 import React, { useState, useMemo, useEffect } from 'react';
 import {
@@ -92,6 +93,15 @@ const HistoryTab = ({
     const [expandedGroups, setExpandedGroups] = useState({});
     const [selectedItems, setSelectedItems] = useState({});
 
+    // ✅ SÉCURITÉ : Nettoyer les données pour s'assurer que 'items' est toujours un tableau
+    const safeHistorique = useMemo(() => {
+        if (!historique || !Array.isArray(historique)) return [];
+        return historique.map(group => ({
+            ...group,
+            items: Array.isArray(group.items) ? group.items : [], // Si items est null/undefined, on met un tableau vide
+        }));
+    }, [historique]);
+
     const getRelativeTime = (date) => {
         const diff = new Date() - new Date(date);
         const mins = Math.floor(diff / 60000);
@@ -133,22 +143,22 @@ const HistoryTab = ({
             : <iconify-icon icon="solar:alt-arrow-down-bold" className="ms-1 text-primary" inline></iconify-icon>;
     };
 
-    // Extraire les clients uniques pour le filtre
+    // Extraire les clients uniques pour le filtre (Utilisation de safeHistorique)
     const uniqueClients = useMemo(() => {
         const clients = new Map();
-        (historique || []).forEach(g => {
+        (safeHistorique || []).forEach(g => {
             if (g.client?._id && !clients.has(g.client._id)) {
                 clients.set(g.client._id, { id: g.client._id, nom: g.client.nom || 'Client' });
             }
         });
         return Array.from(clients.values());
-    }, [historique]);
+    }, [safeHistorique]);
 
-    // Filtrage et tri des données
+    // Filtrage et tri des données (Utilisation de safeHistorique)
     const filteredData = useMemo(() => {
-        if (!historique) return [];
+        if (!safeHistorique) return [];
 
-        let data = [...historique];
+        let data = [...safeHistorique];
 
         // Filtre annulées
         if (showCancelledOnly) {
@@ -176,14 +186,14 @@ const HistoryTab = ({
 
         // Filtre mode de paiement
         if (filterPaymentMode) {
-            data = data.filter(g => g.items?.[0]?.modePaiement === filterPaymentMode);
+            data = data.filter(g => g.items.length > 0 && g.items[0].modePaiement === filterPaymentMode);
         }
 
         // Filtre par numéro de facture
         if (searchInvoice.trim()) {
             const invoiceTerm = searchInvoice.trim().toUpperCase();
             data = data.filter(g => {
-                const invoiceNumber = g.items?.[0]?.numeroFacture || '';
+                const invoiceNumber = (g.items.length > 0 ? g.items[0]?.numeroFacture : '') || '';
                 return invoiceNumber.toUpperCase().includes(invoiceTerm);
             });
         }
@@ -230,8 +240,8 @@ const HistoryTab = ({
                     valB = (b.client?.nom || '').toLowerCase();
                     break;
                 case 'numeroFacture':
-                    valA = (a.numeroFacture || a.items?.[0]?.numeroFacture || '').toLowerCase();
-                    valB = (b.numeroFacture || b.items?.[0]?.numeroFacture || '').toLowerCase();
+                    valA = (a.numeroFacture || (a.items.length > 0 ? a.items[0]?.numeroFacture : '') || '').toLowerCase();
+                    valB = (b.numeroFacture || (b.items.length > 0 ? b.items[0]?.numeroFacture : '') || '').toLowerCase();
                     break;
                 default:
                     valA = new Date(a.createdAt).getTime();
@@ -242,7 +252,7 @@ const HistoryTab = ({
         });
 
         return data;
-    }, [historique, showCancelledOnly, searchTerm, filterStatus, filterPaymentMode, filterClient, dateStart, dateEnd, sortField, sortDirection]);
+    }, [safeHistorique, showCancelledOnly, searchTerm, filterStatus, filterPaymentMode, filterClient, dateStart, dateEnd, sortField, sortDirection]);
 
     // Pagination calculée localement
     const totalFiltered = filteredData.length;
@@ -299,8 +309,8 @@ const HistoryTab = ({
 
     // --- VUE PENDING (mode panier - inchangée) ---
     if (isPendingView) {
-        const newOrders = (historique || []).filter(g => g.statut === 'commande');
-        const readyOrders = (historique || []).filter(g => g.statut === 'en_preparation');
+        const newOrders = (safeHistorique || []).filter(g => g.statut === 'commande');
+        const readyOrders = (safeHistorique || []).filter(g => g.statut === 'en_preparation');
 
         return (
             <>
@@ -617,10 +627,10 @@ const HistoryTab = ({
                                                     <span className="small">{group.client?.nom || 'Client de passage'}</span>
                                                 </td>
                                                 <td>
-                                                    {group.numeroFacture || group.items?.[0]?.numeroFacture ? (
+                                                    {(group.numeroFacture || (group.items.length > 0 && group.items[0]?.numeroFacture)) ? (
                                                         <Badge bg="primary-subtle" text="primary" className="rounded-pill px-2 py-1 small fw-bold">
                                                             <iconify-icon icon="solar:document-text-bold" className="me-1" style={{ fontSize: '11px' }}></iconify-icon>
-                                                            {group.numeroFacture || group.items?.[0]?.numeroFacture}
+                                                            {group.numeroFacture || group.items[0]?.numeroFacture}
                                                         </Badge>
                                                     ) : (
                                                         <span className="text-muted x-small">—</span>
@@ -645,7 +655,7 @@ const HistoryTab = ({
                                                     <span className={`fw-bold small ${group.isCancelled ? 'text-decoration-line-through text-muted' : 'text-dark'}`}>
                                                         {formatCurrency(group.totalGroupPrice)}
                                                     </span>
-                                                    {group.items?.[0]?.modePaiement && (
+                                                    {group.items && group.items.length > 0 && group.items[0]?.modePaiement && (
                                                         <div className="x-small text-muted">{group.items[0].modePaiement}</div>
                                                     )}
                                                 </td>
@@ -664,7 +674,7 @@ const HistoryTab = ({
                                                             {isUpdatingStatus ? <Spinner size="sm" /> : 'Prêt'}
                                                         </Button>
                                                     )}
-                                                    {!group.isCancelled && isCancellationAllowed(group.items?.[0]) && (
+                                                    {!group.isCancelled && group.items && group.items.length > 0 && isCancellationAllowed(group.items[0]) && (
                                                         <Button variant="link" className="text-danger p-0 ms-1" onClick={(e) => { e.stopPropagation(); setSaleToCancel(group.items[0]); setShowCancelModal(true); }} title="Annuler">
                                                             <iconify-icon icon="solar:trash-bin-trash-bold"></iconify-icon>
                                                         </Button>
@@ -741,7 +751,7 @@ const HistoryTab = ({
                                         <div className="fw-bold small">
                                             <Badge bg="primary-subtle" text="primary" className="rounded-pill px-2 py-1">
                                                 <iconify-icon icon="solar:document-text-bold" className="me-1" style={{ fontSize: '11px' }}></iconify-icon>
-                                                {selectedGroup.numeroFacture || selectedGroup.items?.[0]?.numeroFacture || 'N/A'}
+                                                {selectedGroup.numeroFacture || (selectedGroup.items.length > 0 ? selectedGroup.items[0]?.numeroFacture : null) || 'N/A'}
                                             </Badge>
                                         </div>
                                     </Col>
@@ -798,11 +808,11 @@ const HistoryTab = ({
                                 <Row className="g-2">
                                     <Col md={3}>
                                         <div className="x-small text-muted text-uppercase fw-bold">Mode de paiement</div>
-                                        <div className="fw-bold small">{selectedGroup.items?.[0]?.modePaiement || 'N/A'}</div>
+                                        <div className="fw-bold small">{(selectedGroup.items && selectedGroup.items.length > 0 ? selectedGroup.items[0]?.modePaiement : null) || 'N/A'}</div>
                                     </Col>
                                     <Col md={3}>
                                         <div className="x-small text-muted text-uppercase fw-bold">Réf. Transaction</div>
-                                        <div className="fw-bold small">{selectedGroup.transactionRef || selectedGroup.items?.[0]?.transactionRef || '—'}</div>
+                                        <div className="fw-bold small">{selectedGroup.transactionRef || (selectedGroup.items && selectedGroup.items.length > 0 ? selectedGroup.items[0]?.transactionRef : null) || '—'}</div>
                                     </Col>
                                     {userRole !== 'Gérant' && (
                                     <Col md={3}>

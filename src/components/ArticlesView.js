@@ -22,6 +22,7 @@ import ArticleActionModals from "./ArticleActionModals";
 import AdjustmentModals from "./AdjustmentModals";
 import IntelligentSupplyModal from "./common/IntelligentSupplyModal";
 import ImagePreviewModal from "./ImagePreviewModal";
+import ArticleLotsModal from "./ArticleLotsModal";
 
 import logo from "../assets/logo.png";
 
@@ -81,6 +82,9 @@ const ArticlesView = ({ userRole, boutiqueId, title, headerActions }) => {
 
   const [showImageModal, setShowImageModal] = useState(false);
   const [previewImage, setPreviewImage] = useState("");
+
+  // Map articleId -> date de péremption (premier lot trouvé)
+  const [lotExpirations, setLotExpirations] = useState({});
 
   const [sortConfig, setSortConfig] = useState(() => {
     const savedSort = localStorage.getItem("articlesViewSort");
@@ -174,6 +178,9 @@ const ArticlesView = ({ userRole, boutiqueId, title, headerActions }) => {
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [articleToDelete, setArticleToDelete] = useState(null);
+
+  const [showLotsModal, setShowLotsModal] = useState(false);
+  const [articleForLots, setArticleForLots] = useState(null);
 
   const [selectedArticles, setSelectedArticles] = useState([]);
   const [showIntelligentSupplyModal, setShowIntelligentSupplyModal] = useState(false);
@@ -280,6 +287,32 @@ const ArticlesView = ({ userRole, boutiqueId, title, headerActions }) => {
   }, [userRole, currentPage, searchTerm, filterBoutique, filterFournisseur, filterStatus, sortConfig, filterReceptionBoutique, centralShopId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Charger les dates de péremption des lots pour chaque article affiché
+  useEffect(() => {
+    const loadLotExpirations = async () => {
+      const expirations = {};
+      await Promise.all(articles.map(async (article) => {
+        try {
+          const storeId =
+            article.boutique?._id ||
+            filterBoutique ||
+            boutiqueId ||
+            localStorage.getItem("boutiqueId");
+          const res = await articleAPI.getProductLots(article._id, storeId);
+          const lots = Array.isArray(res) ? res : (res?.data || []);
+          const lotWithDate = lots.find((l) => l.dtExpirationAt);
+          if (lotWithDate) {
+            expirations[article._id] = lotWithDate.dtExpirationAt;
+          }
+        } catch (err) {
+          // Ignorer les erreurs de chargement des lots pour un article individuel
+        }
+      }));
+      setLotExpirations(expirations);
+    };
+    loadLotExpirations();
+  }, [articles, filterBoutique, boutiqueId]);
 
   const handleOpenCorrectionModal = async (mvt) => {
     setCorrectionMvt(mvt);
@@ -761,8 +794,52 @@ const ArticlesView = ({ userRole, boutiqueId, title, headerActions }) => {
   };
 
   let filteredArticles = articles.filter((article) => {
-    const matchPromo = !showPromoOnly || (article.promoActive && (article.promo > 0 || article.remise > 0));
-    return matchPromo;
+    // --- Recherche textuelle (nom, code, catégorie) ---
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase().trim();
+      const nom = (article.nom || "").toLowerCase();
+      const code = (article.code || "").toLowerCase();
+      const categorie = (article.categorie || "").toLowerCase();
+      if (!nom.includes(term) && !code.includes(term) && !categorie.includes(term)) {
+        return false;
+      }
+    }
+
+    // --- Filtre Fournisseur ---
+    if (filterFournisseur) {
+      const f = article.fournisseur;
+      const fId = f ? (f._id || f.supplierId || f) : null;
+      if (fId !== filterFournisseur) {
+        return false;
+      }
+    }
+
+    // --- Filtre État du stock ---
+    if (filterStatus) {
+      const seuil = article.seuilAlerte || 10;
+      const qty = article.quantite || 0;
+      const expDate =
+        lotExpirations[article?._id] ||
+        article.datePeremption ||
+        article.dtExpirationAt;
+      const now = new Date();
+      const diffDays = expDate
+        ? Math.ceil((new Date(expDate) - now) / (1000 * 60 * 60 * 24))
+        : null;
+
+      if (filterStatus === "low_stock" && qty > seuil) return false;
+      if (filterStatus === "out_of_stock" && qty > 0) return false;
+      if (filterStatus === "expired" && (!expDate || new Date(expDate) >= now)) return false;
+      if (filterStatus === "expiring_soon" && (!expDate || diffDays === null || diffDays > 30 || diffDays < 0))
+        return false;
+    }
+
+    // --- Filtre Promotions ---
+    const matchPromo =
+      !showPromoOnly || (article.promoActive && (article.promo > 0 || article.remise > 0));
+    if (!matchPromo) return false;
+
+    return true;
   });
 
   const handleSelectAll = (e) => {
@@ -787,7 +864,24 @@ const ArticlesView = ({ userRole, boutiqueId, title, headerActions }) => {
     { key: "prixVente", label: <>P. Vente {getSortIcon("prixVente")}</>, headerClassName: "cursor-pointer text-end", cellClassName: "text-end", onClick: () => handleSort("prixVente"), render: (price) => price.toLocaleString() + " GNF" },
     { key: "promo", label: "Promo/Remise", render: (_, article) => { if (article.promoActive && article.promo > 0) return <Badge bg="danger">Promo -{article.promo}%</Badge>; if (article.remise > 0) return <Badge bg="warning" text="dark">Remise -{article.remise}%</Badge>; if (article.remiseEnAttente?.valeur > 0) return <Badge bg="info">Demande: {article.remiseEnAttente.valeur}%</Badge>; return "-"; } },
     { key: "dateFinPromo", label: "Fin Promo", render: (date, article) => (article.promoActive && article.promo > 0 && date) ? new Date(date).toLocaleDateString("fr-FR") : "-" },
-    { key: "datePeremption", label: "Péremption", headerClassName: "cursor-pointer", onClick: () => handleSort("datePeremption"), render: (date) => { if (!date) return "-"; const d = new Date(date); const diffDays = Math.ceil((d - new Date()) / (1000 * 60 * 60 * 24)); let badgeBg = "success"; if (diffDays < 0) badgeBg = "danger"; else if (diffDays <= 30) badgeBg = "warning"; return <Badge bg={badgeBg}>{d.toLocaleDateString("fr-FR")}</Badge>; } },
+    { key: "datePeremption", label: "Péremption", headerClassName: "cursor-pointer", onClick: () => handleSort("datePeremption"), render: (_, article) => {
+      // La date de péremption vient des lots (tblStockLot.dtExpirationAt), chargée via lotExpirations.
+      const expirationDate =
+        lotExpirations[article?._id] ||
+        article.datePeremption ||
+        article.dtExpirationAt ||
+        article.expirationDate ||
+        (article.lots?.length > 0 ? article.lots[0].dtExpirationAt : null) ||
+        (article.stockLot?.dtExpirationAt) ||
+        (article.stockLots?.length > 0 ? article.stockLots[0].dtExpirationAt : null);
+      if (!expirationDate) return "-";
+      const d = new Date(expirationDate);
+      const diffDays = Math.ceil((d - new Date()) / (1000 * 60 * 60 * 24));
+      let badgeBg = "success";
+      if (diffDays < 0) badgeBg = "danger";
+      else if (diffDays <= 30) badgeBg = "warning";
+      return <Badge bg={badgeBg}>{d.toLocaleDateString("fr-FR")}</Badge>;
+    } },
     { key: "quantite", label: "Quantité", headerClassName: "cursor-pointer text-center", cellClassName: "text-center", onClick: () => handleSort("quantite"), render: (value, article) => { const seuil = article.seuilAlerte || 10; return <Badge bg={value > seuil ? "success" : value > 0 ? "warning" : "danger"}>{value} unités</Badge>; } },
     { key: "actions", label: "Actions", render: (_, article) => (
         <div className="d-flex gap-2">
@@ -797,6 +891,23 @@ const ArticlesView = ({ userRole, boutiqueId, title, headerActions }) => {
               <OverlayTrigger overlay={<Tooltip>Supprimer</Tooltip>}><Button variant="link" className="text-danger p-0" onClick={() => confirmDelete(article._id)}><iconify-icon icon="solar:trash-bin-trash-linear" style={{ fontSize: "20px" }}></iconify-icon></Button></OverlayTrigger>
             </>
           )}
+          <OverlayTrigger
+            overlay={<Tooltip>Gérer les dates de péremption</Tooltip>}
+          >
+            <Button
+              variant="link"
+              className="text-warning p-0"
+              onClick={() => {
+                setArticleForLots(article);
+                setShowLotsModal(true);
+              }}
+            >
+              <iconify-icon
+                icon="solar:calendar-bold"
+                style={{ fontSize: "20px" }}
+              />
+            </Button>
+          </OverlayTrigger>
         </div>
     )},
   ];
@@ -1076,6 +1187,23 @@ const ArticlesView = ({ userRole, boutiqueId, title, headerActions }) => {
           </Modal.Footer>
         </Form>
       </Modal>
+
+      <ArticleLotsModal
+        show={showLotsModal}
+        onHide={() => {
+          setShowLotsModal(false);
+          setArticleForLots(null);
+        }}
+        article={articleForLots}
+        storeId={
+          articleForLots?.boutique?._id ||
+          articleForLots?.boutique?.storeId ||
+          articleForLots?.storeId ||
+          filterBoutique ||
+          boutiqueId ||
+          localStorage.getItem("boutiqueId")
+        }
+      />
     </div>
   );
 };

@@ -6,10 +6,6 @@
 import React, { useMemo } from 'react';
 import { Modal, Form, Row, Col, Button, InputGroup, Badge } from 'react-bootstrap';
 
-/**
- * Composant Modale pour la création et la modification d'articles.
- * Isolé pour une meilleure maintenabilité.
- */
 const ArticleFormModal = ({
     show, 
     onHide, 
@@ -27,7 +23,6 @@ const ArticleFormModal = ({
     fournisseurs, 
     userRole
 }) => {
-    // Calcul automatique du prix TTC à partir du prix HT et de la TVA
     const prixVenteTTC = useMemo(() => {
         const ht = parseFloat(currentArticle.prixVente) || 0;
         const tva = parseFloat(currentArticle.tva) || 0;
@@ -92,7 +87,13 @@ const ArticleFormModal = ({
                                         placeholder="Ex: REF-001"
                                         className="border-end-0"
                                     />
-                                    <Button variant="outline-secondary" className="border-start-0" onClick={() => setCurrentArticle(prev => ({ ...prev, code: generateUniqueCode() }))}>
+                                    {/* 🟢 CORRECTION : type="button" ajouté */}
+                                    <Button 
+                                        type="button"
+                                        variant="outline-secondary" 
+                                        className="border-start-0" 
+                                        onClick={() => setCurrentArticle(prev => ({ ...prev, code: generateUniqueCode() }))}
+                                    >
                                         <iconify-icon icon="solar:magic-wand-bold-duotone" className="me-1"></iconify-icon>
                                         Générer
                                     </Button>
@@ -114,11 +115,14 @@ const ArticleFormModal = ({
                                         required
                                         className="border-end-0"
                                     >
-                                        {availableCategories.sort().map(cat => (
+                                        {/* 🟢 CORRECTION : spread pour éviter de muter le state */}
+                                        {[...availableCategories].sort().map(cat => (
                                             <option key={cat} value={cat}>{cat}</option>
                                         ))}
                                     </Form.Select>
+                                    {/* 🟢 CORRECTION : type="button" ajouté */}
                                     <Button 
+                                        type="button"
                                         variant="outline-primary" 
                                         className="border-start-0"
                                         onClick={handleAddCategory}
@@ -131,20 +135,6 @@ const ArticleFormModal = ({
                                     <div className="text-danger small mt-1 ps-3">{fieldErrors.categorie}</div>
                                 )}
                             </Form.Group>
-                        </Col>
-                    </Row>
-
-                    <Row className="g-3">
-                        <Col md={4}>
-                            <Form.Group className="mb-3">
-                               
-                            </Form.Group>
-                        </Col>
-                        <Col md={4}>
-                           
-                        </Col>
-                        <Col md={4}>
-                           
                         </Col>
                     </Row>
 
@@ -171,7 +161,7 @@ const ArticleFormModal = ({
                                 <Form.Label className="fw-bold text-muted small text-uppercase">Boutique</Form.Label>
                                 <Form.Select
                                     name="boutique"
-                                    value={currentArticle.boutique?._id || currentArticle.boutique || ''}
+                                    value={currentArticle.boutique?.storeId || currentArticle.boutique?._id || currentArticle.boutique || ''}
                                     onChange={handleChange}
                                     isInvalid={!!fieldErrors.boutique}
                                     required
@@ -180,11 +170,11 @@ const ArticleFormModal = ({
                                 >
                                     <option value="">Sélectionner une boutique</option>
                                     {(boutiques || []).map(boutique => (
-                                        <option key={boutique._id} value={boutique._id}>
+                                        <option key={boutique.storeId || boutique._id} value={boutique.storeId || boutique._id}>
                                             {boutique.type === 'Bar' && 'BAR : '}
                                             {boutique.type === 'Centrale' && 'CENTRALE : '}
                                             {boutique.type === 'Secondaire' && 'BOUTIQUE : '}
-                                            {boutique.nom}
+                                            {boutique.nom || boutique.vcStoreName}
                                         </option>
                                     ))}
                                 </Form.Select>
@@ -205,8 +195,8 @@ const ArticleFormModal = ({
                                 >
                                     <option value="">Sélectionner un fournisseur</option>
                                     {(fournisseurs || []).map(fournisseur => (
-                                        <option key={fournisseur._id} value={fournisseur._id}>
-                                            {fournisseur.nom}
+                                        <option key={fournisseur._id || fournisseur.supplierId} value={fournisseur._id || fournisseur.supplierId}>
+                                            {fournisseur.nom || fournisseur.vcSupplierName}
                                         </option>
                                     ))}
                                 </Form.Select>
@@ -293,19 +283,26 @@ const ArticleFormModal = ({
                                 </Form.Control.Feedback>
                             </Form.Group>
                         </Col>
-                        <Col md={6}>
-                            <Form.Group className="mb-3">
-                                <Form.Label className="fw-bold text-muted small text-uppercase">Date de péremption</Form.Label>
-                                <Form.Control
-                                    type="date"
-                                    name="datePeremption"
-                                    value={currentArticle.datePeremption ? currentArticle.datePeremption.split('T')[0] : ''}
-                                    onChange={handleChange}
-                                    min={new Date().toISOString().split('T')[0]}
-                                    className="rounded-pill shadow-sm"
-                                />
-                            </Form.Group>
-                        </Col>
+                        
+                        {/* 🟢 CORRECTION : Date de péremption affichée uniquement à la création */}
+                        {!editMode && (
+                            <Col md={6}>
+                                <Form.Group className="mb-3">
+                                    <Form.Label className="fw-bold text-muted small text-uppercase">Date de péremption (Lot initial)</Form.Label>
+                                    <Form.Control
+                                        type="date"
+                                        name="datePeremption"
+                                        value={currentArticle.datePeremption ? currentArticle.datePeremption.split('T')[0] : ''}
+                                        onChange={handleChange}
+                                        min={new Date().toISOString().split('T')[0]}
+                                        className="rounded-pill shadow-sm"
+                                    />
+                                    <Form.Text className="text-muted small ps-2">
+                                        En modification, la date se gère lot par lot via le bouton "Gérer les lots".
+                                    </Form.Text>
+                                </Form.Group>
+                            </Col>
+                        )}
                     </Row>
 
                     <Form.Group className="mb-3">

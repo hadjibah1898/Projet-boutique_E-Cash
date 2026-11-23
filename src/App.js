@@ -23,7 +23,10 @@ import NotificationsHistoryView from './components/NotificationsHistoryView';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import AuditLogView from './components/AuditLogView';
 import CaisseView from './components/CaisseView';
-import AdminCaisseView from './components/AdminCaisseView';
+
+// ✅ LE SEUL CHANGEMENT ICI : le chemin vers le dossier admin-caisse
+import AdminCaisseView from './components/admin-caisse/AdminCaisseView'; 
+
 import DebtManagementView from './components/DebtManagementView';
 import GerantCaisseValidation from './components/GerantCaisseValidation';
 import CashiersView from './components/CashiersView';
@@ -66,7 +69,6 @@ const NotificationToasts = () => {
     if (notification.link) {
       navigate(notification.link);
     } else {
-      // ✅ CORRECTION : Rôles SQL
       const role = localStorage.getItem('userRole');
       const basePath = role === 'ADMIN' ? '/admin' : (role === 'MANAGER' ? '/gerant' : (role === 'CASHIER' ? '/caissier' : ''));
       if (basePath) {
@@ -182,7 +184,6 @@ function App() {
     }
   };
 
-  // ✅ CORRECTION : Fonction de redirection adaptée aux rôles SQL Server
   const getRedirectPath = (role) => {
     const r = (role || '').toUpperCase();
     if (r === 'ADMIN' || r === 'SUPER_ADMIN') return "/admin";
@@ -196,14 +197,10 @@ function App() {
       {isApiLoading && <div className="top-loading-bar"></div>}
       <div id="main-wrapper" data-bs-theme={theme} className={businessType === 'Bar' ? 'bar-account-theme' : ''}>
         <Routes>
-          {/* Route Connexion */}
           <Route path="/login" element={!userRole ? <Auth onLogin={handleLogin} /> : <Navigate to={getRedirectPath(userRole)} />} />
-
-          {/* Route Inscription */}
           <Route path="/register" element={!userRole ? <Register /> : <Navigate to={getRedirectPath(userRole)} />} />
           <Route path="/register/success" element={<OnboardingSuccess />} />
 
-          {/* ✅ CORRECTION : Routes Protégées Admin (Rôles SQL) */}
           <Route path="/admin" element={
             <ProtectedRoute userRole={userRole} requiredRole={['ADMIN', 'SUPER_ADMIN']}>
               {!mustChangePassword ? (
@@ -225,13 +222,13 @@ function App() {
             <Route path="mouvements" element={<StockMovementsView />} />
             <Route path="clients" element={<ClientsView />} />
             <Route path="notifications" element={<NotificationsHistoryView />} />
+            {/* ✅ LA ROUTE QUI UTILISE LE COMPOSANT */}
             <Route path="caisse" element={<AdminCaisseView />} />
             <Route path="creances" element={<DebtManagementView />} />
             <Route path="audit" element={<AuditLogView />} />
             <Route path="registrations/pending" element={userRole === 'SUPER_ADMIN' ? <AdminRegistrationValidation /> : <Navigate to="/admin" replace />} />
           </Route>
 
-          {/* ✅ CORRECTION : Routes Protégées Gérant (Rôles SQL) */}
           <Route path="/gerant" element={
             <ProtectedRoute userRole={userRole} requiredRole={['MANAGER']}>
               {!mustChangePassword ? (
@@ -254,7 +251,6 @@ function App() {
             <Route path="caisse/rapports-caissiers" element={<GerantCaisseValidation />} />
           </Route>
 
-          {/* ✅ CORRECTION : Routes Protégées Caissier (Rôles SQL) */}
           <Route path="/caissier" element={
             <ProtectedRoute userRole={userRole} requiredRole={['CASHIER']}>
               {!mustChangePassword ? (
@@ -271,7 +267,6 @@ function App() {
             <Route path="creances" element={<DebtManagementView />} />
           </Route>
 
-          {/* ✅ CORRECTION : Routes Partagées (Profil) */}
           <Route path="/profile" element={
             <ProtectedRoute userRole={userRole} requiredRole={['ADMIN', 'MANAGER', 'CASHIER', 'SUPER_ADMIN']}>
               <MainLayout userName={userName} userRole={userRole} handleLogout={handleLogout} theme={theme} toggleTheme={toggleTheme} isSidebarOpen={isSidebarOpen} toggleSidebar={toggleSidebar} />
@@ -287,7 +282,6 @@ function App() {
         <ToastContainer position="top-right" autoClose={5000} hideProgressBar={false} newestOnTop={true} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="colored" />
       </div>
 
-      {/* Modale de changement de mot de passe obligatoire */}
       <Modal show={!!userRole && mustChangePassword} backdrop="static" keyboard={false} centered>
         <Modal.Header>
           <Modal.Title className="text-danger">🔒 Changement de mot de passe requis</Modal.Title>

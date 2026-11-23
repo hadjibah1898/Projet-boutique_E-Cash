@@ -111,6 +111,7 @@ const CaisseView = () => {
         }
     }, [location.state?.openCloseModal, caisseStatut?._id, loading]);
 
+    // ✅ CORRECTION LIGNE 131 : Ajout de caisseStatut dans le tableau de dépendances
     useEffect(() => {
         if (showCloseModal && caisseStatut) {
             const abortController = new AbortController();
@@ -128,7 +129,7 @@ const CaisseView = () => {
             loadStatistiquesSession();
             return () => abortController.abort();
         }
-    }, [showCloseModal, caisseStatut?._id]);
+    }, [showCloseModal, caisseStatut]); // Ajout de caisseStatut ici
 
     useEffect(() => {
         if (!showCloseModal) {
@@ -145,7 +146,7 @@ const CaisseView = () => {
             try {
                 const sessionId = source.cashSessionId || source.ouvertureCaisse?._id || source.ouvertureCaisse || source._id;
                 const [ventesRes, dettesRes] = await Promise.all([
-                    venteAPI.getHistorique({ limit: 0 }),
+                    venteAPI.getHistorique({ limit: 1000 }), // Correction ici pour éviter limit:0
                     clientAPI.getDebtHistory()
                 ]);
 
@@ -242,65 +243,62 @@ const CaisseView = () => {
     }, [isCorrection, currentRapportForCorrection, statistiquesSession, caisseStatut]);
 
     // ✅ FONCTION DE CLÔTURE
-  const handleCloseCaisse = async (e) => {
-    e.preventDefault();
-    setSuccess('');
-    setClosingCaisse(true);
-    setAfficherJustification(false);
+    const handleCloseCaisse = async (e) => {
+        e.preventDefault();
+        setSuccess('');
+        setClosingCaisse(true);
+        setAfficherJustification(false);
 
-    const montantClotureNum = parseFloat(montantCloture);
-    if (isNaN(montantClotureNum)) {
-         toast.error("Veuillez saisir un montant valide.");
-         setClosingCaisse(false);
-         return;
-    }
+        const montantClotureNum = parseFloat(montantCloture);
+        if (isNaN(montantClotureNum)) {
+             toast.error("Veuillez saisir un montant valide.");
+             setClosingCaisse(false);
+             return;
+        }
 
-    try {
-        if (isCorrection) {
-            // ✅ RÉCUPÉRATION DE L'ID DU RAPPORT
-            // On cherche l'ID dans la variable qui stocke le rapport à corriger
-            const reportId = currentRapportForCorrection?.cashReportId || currentRapportForCorrection?._id || currentRapportForCorrection?.id;
+        try {
+            if (isCorrection) {
+                const reportId = currentRapportForCorrection?.cashReportId || currentRapportForCorrection?._id || currentRapportForCorrection?.id;
 
-            if (!reportId) {
-                toast.error("Impossible de trouver l'ID du rapport à corriger.");
-                setClosingCaisse(false);
-                return;
+                if (!reportId) {
+                    toast.error("Impossible de trouver l'ID du rapport à corriger.");
+                    setClosingCaisse(false);
+                    return;
+                }
+
+                await caisseAPI.corrigerRapport({ 
+                    reportId: reportId,
+                    newAmount: Math.round(montantClotureNum), 
+                    comment: commentaires || "Correction depuis l'interface"
+                });
+                toast.success("Rapport corrigé et renvoyé pour validation.");
+                
+            } else {
+                await caisseAPI.fermer({ 
+                    montantCloture: Math.round(montantClotureNum), 
+                    commentairesGérant: commentaires.trim() 
+                });
+                toast.success("Caisse fermée et rapport généré avec succès.");
             }
-
-            // ✅ ENVOI AVEC LES BONS NOMS DE CHAMPS (reportId, newAmount, comment)
-            await caisseAPI.corrigerRapport({ 
-                reportId: reportId,
-                newAmount: Math.round(montantClotureNum), 
-                comment: commentaires || "Correction depuis l'interface"
-            });
-            toast.success("Rapport corrigé et renvoyé pour validation.");
             
-        } else {
-            // Mode normal (clôture classique)
-            await caisseAPI.fermer({ 
-                montantCloture: Math.round(montantClotureNum), 
-                commentairesGérant: commentaires.trim() 
-            });
-            toast.success("Caisse fermée et rapport généré avec succès.");
+            setMontantCloture('');
+            setCommentaires('');
+            setShowCloseModal(false);
+            setCurrentRapportForCorrection(null);
+            
+            setTimeout(() => { fetchStatut(); }, 300); 
+        } catch (err) {
+            if (err.response?.status === 400) {
+                setAfficherJustification(true); 
+                toast.error(err.response.data.message); 
+            } else {
+                toast.error(err.response?.data?.message || "Erreur lors de la clôture de la caisse.");
+            }
+        } finally {
+            setClosingCaisse(false);
         }
-        
-        setMontantCloture('');
-        setCommentaires('');
-        setShowCloseModal(false);
-        setCurrentRapportForCorrection(null);
-        
-        setTimeout(() => { fetchStatut(); }, 300); 
-    } catch (err) {
-        if (err.response?.status === 400) {
-            setAfficherJustification(true); 
-            toast.error(err.response.data.message); 
-        } else {
-            toast.error(err.response?.data?.message || "Erreur lors de la clôture de la caisse.");
-        }
-    } finally {
-        setClosingCaisse(false);
-    }
-};
+    };
+
     const renderOpenCaisseForm = () => (
         <Card className="border-0 shadow-sm rounded-4">
             <Card.Body className="p-4">
@@ -795,8 +793,8 @@ const RapportsTab = ({ onCorrect }) => {
             const ventes = Array.isArray(details.ventes) ? details.ventes : (Array.isArray(details.data?.ventes) ? details.data.ventes : []);
             const depenses = Array.isArray(details.depenses) ? details.depenses : (Array.isArray(details.data?.depenses) ? details.data.depenses : []);
             const remboursements = Array.isArray(details.remboursements) ? details.remboursements : (Array.isArray(details.data?.remboursements) ? details.data.remboursements : []);
-            const dettesAccordees = Array.isArray(details.dettesAccordees) ? details.dettesAccordees : (Array.isArray(details.data?.dettesAccordees) ? details.data.dettesAccordees : []);
-
+            // ✅ CORRECTION LIGNE 798 : Suppression de dettesAccordees qui n'était pas utilisé
+            
             if (!rapport || typeof rapport !== 'object' || !rapport.mTotalSales) {
                 console.error("Données du rapport invalides:", details);
                 toast.error("Impossible de générer le PDF : données du rapport introuvables.");
@@ -908,9 +906,9 @@ const RapportsTab = ({ onCorrect }) => {
             const res = await caisseAPI.getReportDetails(r.cashReportId || r._id);
             const details = res?.data?.data ? res.data.data : res;
             if (details?.rapport) { generateDetailedReportPDF(details); } 
-            else { generateDetailedReportPDF({ rapport: r, ventes: [], depenses: [], remboursements: [], dettesAccordees: [] }); }
+            else { generateDetailedReportPDF({ rapport: r, ventes: [], depenses: [], remboursements: [] }); }
         } catch (err) {
-            generateDetailedReportPDF({ rapport: r, ventes: [], depenses: [], remboursements: [], dettesAccordees: [] });
+            generateDetailedReportPDF({ rapport: r, ventes: [], depenses: [], remboursements: [] });
             toast.warning('Détails indisponibles, PDF résumé généré.');
         }
     };
